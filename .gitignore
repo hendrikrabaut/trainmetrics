@@ -1,1 +1,3 @@
 data/*.db
+
+database/testdata.sql
