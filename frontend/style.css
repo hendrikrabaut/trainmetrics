@@ -491,7 +491,7 @@ th { font-size: 0.85rem; font-weight: 650; color: var(--text-secondary); }
 
 .workout-row:last-child { border-bottom: 0; }
 
-.workout-row summary {
+.workout-row > summary {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) auto;
   align-items: center;
@@ -503,9 +503,9 @@ th { font-size: 0.85rem; font-weight: 650; color: var(--text-secondary); }
   list-style: none;
 }
 
-.workout-row summary::-webkit-details-marker { display: none; }
+.workout-row > summary::-webkit-details-marker { display: none; }
 
-.workout-row summary:hover { background: var(--page); }
+.workout-row > summary:hover { background: var(--page); }
 
 .sport-mark {
   display: grid;
@@ -907,3 +907,173 @@ dialog.level-up .coach-art { display: none; }
 @media (max-width: 820px) {
   .home-grid .night-card { order: 3; }
 }
+
+/* ---------- sub tabs ---------- */
+
+.sub-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+
+.sub-tabs button {
+  flex: none;
+  min-height: 40px;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+}
+
+.sub-tabs button:hover { color: var(--text-primary); background: none; }
+
+.sub-tabs button[aria-selected="true"] { color: var(--deep); border-bottom-color: var(--wine); }
+
+/* ---------- details ---------- */
+
+.workout-extra { display: grid; gap: 14px; min-width: 0; margin-bottom: 12px; }
+
+.workout-body { min-width: 0; }
+
+@media (max-width: 560px) {
+  .workout-body { padding-left: 16px; }
+}
+
+.zone-bars { display: grid; gap: 6px; }
+
+.zone-row { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 62px; align-items: center; gap: 8px; font-size: 0.9rem; }
+
+.zone-row small { color: var(--text-secondary); }
+
+.zone-track { height: 14px; overflow: hidden; background: var(--soft); border-radius: 4px; }
+
+.zone-track i { display: block; height: 100%; border-radius: 4px; }
+
+/* One hue, from light to dark: darker is harder. */
+.zone-1 { background: #D9A9A6; }
+.zone-2 { background: #C47C80; }
+.zone-3 { background: #A84F5C; }
+.zone-4 { background: #8B2A40; }
+.zone-5 { background: var(--wine); }
+
+.zone-time { text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 560px) {
+  .zone-row { grid-template-columns: minmax(0, 1fr) 62px; }
+  .zone-row .zone-track { grid-column: 1 / -1; grid-row: 2; }
+}
+
+.gear-picker { max-width: 260px; }
+
+.gear-bar { width: 120px; height: 6px; margin-top: 4px; }
+
+.gear-warning { color: var(--wine); font-size: 0.85rem; font-weight: 650; }
+
+.gear-notice { display: block; margin: 0; color: var(--on-dark); background: var(--wine); text-decoration: none; }
+
+.check-field { display: flex; align-items: center; gap: 8px; align-self: end; min-height: 42px; }
+
+.check-field input { width: 18px; min-height: 18px; height: 18px; }
+
+.segment-tool { display: grid; gap: 8px; margin-bottom: 10px; }
+
+.segment { padding: 10px 0; border-bottom: 1px solid var(--grid); }
+
+.segment:last-child { border-bottom: 0; }
+
+.segment > summary { margin: 0; color: var(--text-primary); font-size: 0.95rem; }
+
+.segment > .table-wrap { margin-top: 8px; }
+
+.highlights { margin: 0; padding-left: 18px; }
+
+/* ---------- charts with several lines ---------- */
+
+.chart .chart-mark { stroke: var(--steel); stroke-width: 1; stroke-dasharray: 3 3; }
+
+.chart .chart-mark-label { font-size: 11px; }
+
+.chart .zero-line { stroke: var(--steel); stroke-width: 1; }
+
+.chart .direct-label { font-size: 11px; }
+
+/* ---------- plan ---------- */
+
+.session.partial .check { color: var(--deep); background: var(--peach); border-color: var(--peach); }
+
+.compliance { font-size: 0.85rem !important; font-weight: 600; color: var(--text-primary) !important; }
+
+.compliance.SHORT { color: var(--wine) !important; }
+
+.phase-bar { display: flex; gap: 3px; overflow: hidden; border-radius: 8px; }
+
+.phase { min-width: 44px; padding: 8px; font-size: 0.82rem; font-weight: 650; }
+
+.phase span, .phase small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.phase small { font-weight: 400; }
+
+.phase.BASE { color: var(--deep); background: var(--sky); }
+.phase.BUILD { color: var(--deep); background: var(--peach); }
+.phase.PEAK { color: var(--on-dark); background: var(--wine); }
+.phase.TAPER { color: var(--on-dark); background: var(--deep); }
+
+/* ---------- calendar ---------- */
+
+.calendar-scroll { overflow-x: auto; }
+
+.calendar { display: grid; grid-template-columns: repeat(7, minmax(92px, 1fr)); min-width: 660px; background: var(--line); gap: 1px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+
+.calendar-head { padding: 6px; font-size: 0.82rem; font-weight: 650; text-align: center; color: var(--text-secondary); background: var(--page); }
+
+.calendar-day { display: flex; flex-direction: column; gap: 3px; min-height: 92px; padding: 4px; background: var(--card); }
+
+.calendar-day.past { background: var(--page); }
+
+.calendar-day.today .calendar-date { color: var(--on-dark); background: var(--wine); border-radius: 50%; }
+
+.calendar-day.drop-target { background: var(--soft); outline: 2px dashed var(--wine); outline-offset: -2px; }
+
+.calendar-date { align-self: flex-start; width: 22px; height: 22px; font-size: 0.8rem; font-weight: 650; line-height: 22px; text-align: center; }
+
+.calendar-chip { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 2px 5px; font-size: 0.75rem; line-height: 1.25; border-radius: 5px; background: var(--soft); }
+
+.calendar-chip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.calendar-chip .sport-icon { flex: none; width: 13px; height: 13px; }
+
+.calendar-chip[draggable="true"] { cursor: grab; }
+
+.calendar-chip.planned { color: var(--deep); background: var(--sky); }
+.calendar-chip.done { color: var(--on-dark); background: var(--deep); }
+.calendar-chip.partial { color: var(--deep); background: var(--peach); }
+.calendar-chip.missed { color: var(--wine); background: transparent; border: 1px dashed var(--wine); }
+.calendar-chip.workout { color: var(--text-secondary); background: transparent; border: 1px solid var(--line); }
+.calendar-chip.race { color: var(--on-dark); background: var(--wine); font-weight: 650; }
+
+/* ---------- year ---------- */
+
+.year-hero { display: grid; gap: 2px; padding: 20px; margin-bottom: 14px; color: var(--on-dark); background: var(--deep); border-radius: 12px; }
+
+.year-hero span:first-child { color: var(--peach); font-weight: 650; }
+
+.year-hero strong { font-size: 2.4rem; font-weight: 800; line-height: 1.1; }
+
+.heat-scroll { overflow-x: auto; }
+
+.heatmap { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); grid-auto-columns: 12px; gap: 3px; width: max-content; }
+
+.heatmap i, .heat-legend i { display: block; width: 12px; height: 12px; border-radius: 2px; }
+
+.heat-blank { visibility: hidden; }
+
+.heat-0 { background: var(--soft); }
+.heat-1 { background: #D9A9A6; }
+.heat-2 { background: #B9636B; }
+.heat-3 { background: #8B2A40; }
+.heat-4 { background: var(--wine); }
+
+.heat-legend { display: flex; align-items: center; gap: 3px; margin-top: 6px; font-size: 0.8rem; }
+
+.phase.RACE { color: var(--deep); background: var(--steel); }
+
+.gear-edit-row td { white-space: normal; }

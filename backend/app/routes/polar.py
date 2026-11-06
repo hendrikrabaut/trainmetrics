@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_user_id
 from app.models.polar_account import PolarAccount
 from app.services import polar
 
@@ -20,7 +21,7 @@ _pending_links: dict[str, int] = {}
 
 @router.get("/status")
 def get_status(
-    user_id: int = 1,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     account = db.get(PolarAccount, user_id)
@@ -33,7 +34,7 @@ def get_status(
 
 
 @router.get("/connect")
-def connect(user_id: int = 1):
+def connect(user_id: int = Depends(get_user_id)):
     if not polar.is_configured():
         raise HTTPException(
             status_code=503,
@@ -85,7 +86,7 @@ def callback(
 
 @router.post("/sync")
 def sync(
-    user_id: int = 1,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     try:
@@ -98,7 +99,7 @@ def sync(
 
 @router.delete("/link")
 def unlink(
-    user_id: int = 1,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     """Removes the token here. Imported trainings stay."""

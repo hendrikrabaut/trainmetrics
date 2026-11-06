@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_user_id
 from app.models.body_measurement import BodyMeasurement
 from app.schemas.body_measurement import (
     BodyMeasurementCreate,
@@ -62,10 +63,11 @@ def get_body_measurement(
 )
 def create_body_measurement(
     measurement: BodyMeasurementCreate,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     new_measurement = BodyMeasurement(
-        user_id=measurement.user_id,
+        user_id=user_id,
         date=measurement.date,
         weight=measurement.weight,
         body_fat=measurement.body_fat,

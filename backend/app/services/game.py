@@ -41,8 +41,11 @@ QUESTS = [
 
 
 def xp_for_level(level: int) -> int:
-    """Total XP needed to reach a level. Each level costs 100 XP more."""
-    return 50 * level * (level - 1)
+    """Total XP needed to reach a level. Each level costs 300 XP more.
+
+    At about 600 XP a week, the first levels take days and later ones weeks.
+    """
+    return 150 * level * (level - 1)
 
 
 def level_for_xp(xp: int) -> int:

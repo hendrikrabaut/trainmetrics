@@ -17,6 +17,8 @@ from app.models.workout import Workout
 from app.schemas.common import speed_in_meters_per_second
 from app.services.polar import parse_duration
 from app.services.routes import store_route
+from app.services.segments import match_workout
+from app.services.streams import clean_series, store_stream
 from app.services.sleep import store_night
 
 
@@ -44,20 +46,87 @@ def _whole(value) -> int | None:
     return None if value is None else round(value)
 
 
+def _export_samples(exercise: dict, way_points: list[dict]) -> dict:
+    """The export has one value a second, with its speed in km/h."""
+    series = {
+        sample.get("type"): clean_series(sample.get("values"))
+        for sample in (exercise.get("samples") or {}).get("samples") or []
+        if sample.get("intervalMillis") == 1000
+    }
+
+    length = max((len(values) for values in series.values()), default=0)
+
+    if not length:
+        return {}
+
+    latitude = [None] * length
+    longitude = [None] * length
+
+    for point in way_points:
+        second = int((point.get("elapsedMillis") or 0) / 1000)
+
+        if 0 <= second < length:
+            latitude[second] = point.get("latitude")
+            longitude[second] = point.get("longitude")
+
+    samples = {
+        "heart_rate": series.get("HEART_RATE"),
+        "altitude": series.get("ALTITUDE"),
+        "distance": series.get("DISTANCE"),
+        "speed": [
+            value / 3.6 if value is not None else None
+            for value in series.get("SPEED") or []
+        ],
+    }
+
+    if way_points:
+        samples["latitude"] = latitude
+        samples["longitude"] = longitude
+
+    return {name: values for name, values in samples.items() if values}
+
+
+def _export_zones(exercise: dict) -> list[dict] | None:
+    """Polar's own time in each heart rate zone, as the watch shows it."""
+    for zone_type in exercise.get("zones") or []:
+        if zone_type.get("type") == "ZONE_TYPE_HEART_RATE":
+            return [
+                {
+                    "lower": zone.get("lowerLimit"),
+                    "upper": zone.get("higherLimit"),
+                    "seconds": round((zone.get("inZone") or 0) / 1000),
+                }
+                for zone in zone_type.get("zones") or []
+            ]
+
+    return None
+
+
 def _store_exercise_route(
     db: Session,
     workout_id: int,
     exercise: dict,
     counts: dict,
+    user_id: int,
+    sport: str,
 ) -> None:
     route = (exercise.get("routes") or {}).get("route") or {}
-    points = [
-        (point.get("latitude"), point.get("longitude"))
-        for point in route.get("wayPoints") or []
-    ]
+    way_points = route.get("wayPoints") or []
+    points = [(point.get("latitude"), point.get("longitude")) for point in way_points]
 
     if store_route(db, workout_id, points):
         counts["routes"] += 1
+
+    if store_stream(
+        db,
+        workout_id,
+        user_id,
+        sport,
+        _export_samples(exercise, way_points),
+        _export_zones(exercise),
+    ):
+        counts["streams"] += 1
+        match_workout(db, user_id, workout_id, sport)
 
 
 def _store_exercise(
@@ -70,8 +139,15 @@ def _store_exercise(
     source_hash = f"polar-export:{exercise['identifier']['id']}"
     known_id = db.scalar(select(Workout.id).where(Workout.source_hash == source_hash))
 
+    sport_id = exercise.get("sport", {}).get("id") or session["sport"]["id"]
+    sport = SPORTS.get(str(sport_id))
+
+    if sport is None:
+        counts["unknown_sports"].add(str(sport_id))
+        sport = "OTHER"
+
     if known_id:
-        _store_exercise_route(db, known_id, exercise, counts)
+        _store_exercise_route(db, known_id, exercise, counts, user_id, sport)
         counts["skipped"] += 1
         return
 
@@ -87,30 +163,24 @@ def _store_exercise(
         if running_index and existing.endurance_activity:
             existing.endurance_activity.running_index = running_index
 
-        _store_exercise_route(db, existing.id, exercise, counts)
+        _store_exercise_route(db, existing.id, exercise, counts, user_id, sport)
         counts["skipped"] += 1
         return
-
-    sport_id = exercise.get("sport", {}).get("id") or session["sport"]["id"]
-    sport = SPORTS.get(str(sport_id))
-
-    if sport is None:
-        counts["unknown_sports"].add(str(sport_id))
-        sport = "OTHER"
 
     seconds = round(exercise["durationMillis"] / 1000)
 
     if sport == STRENGTH:
-        db.add(
-            Workout(
-                user_id=user_id,
-                date=start,
-                duration=seconds,
-                type=STRENGTH,
-                source_hash=source_hash,
-                notes="Geïmporteerd uit Polar, zonder oefeningen en sets",
-            )
+        workout = Workout(
+            user_id=user_id,
+            date=start,
+            duration=seconds,
+            type=STRENGTH,
+            source_hash=source_hash,
+            notes="Geïmporteerd uit Polar, zonder oefeningen en sets",
         )
+        db.add(workout)
+        db.flush()
+        _store_exercise_route(db, workout.id, exercise, counts, user_id, sport)
         counts["imported"] += 1
         return
 
@@ -146,7 +216,7 @@ def _store_exercise(
     )
     db.add(workout)
     db.flush()
-    _store_exercise_route(db, workout.id, exercise, counts)
+    _store_exercise_route(db, workout.id, exercise, counts, user_id, sport)
     counts["imported"] += 1
 
 
@@ -271,6 +341,7 @@ def import_export(db: Session, user_id: int, folder: Path) -> dict:
         "weights": 0,
         "nights": 0,
         "routes": 0,
+        "streams": 0,
         "unknown_sports": set(),
     }
 

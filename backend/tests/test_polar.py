@@ -55,6 +55,8 @@ RECHARGE = {
     "heart_rate_avg": 52,
     "heart_rate_variability_avg": 78,
     "breathing_rate_avg": 14.5,
+    "nightly_recharge_status": 5,
+    "ans_charge": 3.3,
 }
 
 
@@ -216,7 +218,6 @@ def test_sync_enriches_the_same_training_from_a_file(client, fake_polar):
     client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": "2026-10-13T10:40:02",
             "type": "ENDURANCE",
             "endurance_activity": {"activity_type": "RUNNING", "distance": 10000},
@@ -270,6 +271,13 @@ def test_sync_also_brings_sleep_and_recovery(client, fake_polar):
     assert night["heart_rate"] == 52
     assert night["breathing_rate"] == 14.5
     assert night["sleep_start"] == "2026-10-13T23:30:00"
+    assert night["recharge_status"] == 5
+
+    recovery = client.get("/api/analytics/sleep").json()["recovery"]
+
+    assert recovery["source"] == "POLAR"
+    assert recovery["status"] == "GOOD"
+    assert recovery["ans_charge"] == 3.3
 
 
 def test_sync_survives_missing_sleep_data(client, fake_polar):
@@ -279,3 +287,31 @@ def test_sync_survives_missing_sleep_data(client, fake_polar):
 
     assert client.post("/api/polar/sync").json()["nights"] == 0
     assert client.get("/api/analytics/sleep").json()["last_night"] is None
+
+
+def test_a_new_training_gets_its_measurements_from_the_fit_file(client, fake_polar, monkeypatch):
+    from tests.test_insights import _fit_with_records
+
+    fit = _fit_with_records()
+    real = __import__("app.services.polar", fromlist=["_download_fit"])
+
+    asked = []
+
+    def fake_download(token, exercise_id):
+        asked.append(exercise_id)
+        return fit if exercise_id == "abc" else b"broken"
+
+    monkeypatch.setattr(real, "_download_fit", fake_download)
+
+    _link(client)
+    assert client.post("/api/polar/sync").json()["imported"] == 3
+    assert sorted(asked) == ["abc", "def"]
+
+    workouts = {w["date"]: w for w in client.get("/api/workouts/").json()}
+    run = workouts["2026-10-13T10:40:02"]
+    ride = workouts["2026-10-14T10:00:00"]
+
+    assert run["has_route"] is True
+    assert client.get(f"/api/workouts/{run['id']}/detail").json()["splits"][0]["meters"] == 1000
+    # A file that cannot be read costs the measurements, not the training.
+    assert client.get(f"/api/workouts/{ride['id']}/detail").json()["series"] == {}

@@ -1,8 +1,9 @@
 # TrainMetrics
 
 Persoonlijk trainingsplatform dat lokaal draait: krachttraining, duursport,
-lichaamsmetingen en materiaal, met Polar-sync, schattingen in de stijl van Strava,
-XP en trofeeën, en de Coach: een norse bokstrainer die je trainingsplannen
+lichaamsmetingen en materiaal, met Polar-sync, detail per training, hartslagzones,
+beste prestaties, routes en segmenten, een seizoensplan met kalender, XP en
+trofeeën, en de Coach: een norse bokstrainer die je trainingsplannen
 maakt. Plannen kun je zelf aanpassen en als iCal-bestand naar je agenda sturen.
 
 - **Backend:** FastAPI, SQLAlchemy, SQLite, Alembic (`backend/`)

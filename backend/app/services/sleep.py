@@ -13,6 +13,8 @@ BASELINE_NIGHTS = 28
 MINIMUM_BASELINE_NIGHTS = 7
 SUMMARY_NIGHTS = 30
 RECENT_DAYS = 2
+LOW_DEVIATION = -1
+GOOD_DEVIATION = 0.2
 
 
 def store_night(db: Session, user_id: int, night: str, values: dict) -> SleepNight:
@@ -30,30 +32,46 @@ def store_night(db: Session, user_id: int, night: str, values: dict) -> SleepNig
     return row
 
 
-def _recovery(night: SleepNight, earlier: list[SleepNight]) -> dict | None:
-    """Compares last night's heart rate variability with the user's own normal.
+def _status_from_polar(recharge_status: int) -> str:
+    if recharge_status <= 2:
+        return "LOW"
 
-    This is this app's estimate. Polar's Nightly Recharge status is not in its
-    data export, so it cannot be used for the history.
+    return "OK" if recharge_status <= 4 else "GOOD"
+
+
+def _recovery(night: SleepNight, earlier: list[SleepNight]) -> dict | None:
+    """Polar's own verdict when there is one, otherwise this app's estimate.
+
+    The estimate compares heart rate variability with the user's own normal. Its
+    limits gave the same category as Polar on 20 of 23 real nights, against 17
+    with a rule that also used the sleep score. That is a small sample, so it
+    only stands in for nights without a verdict from Polar.
     """
+    if night.recharge_status:
+        return {
+            "source": "POLAR",
+            "status": _status_from_polar(night.recharge_status),
+            "recharge_status": night.recharge_status,
+            "ans_charge": night.ans_charge,
+        }
+
     baseline = [row.hrv_ms for row in earlier if row.hrv_ms][-BASELINE_NIGHTS:]
 
     if not night.hrv_ms or len(baseline) < MINIMUM_BASELINE_NIGHTS:
         return None
 
     mean = statistics.fmean(baseline)
-    spread = statistics.stdev(baseline) or 1
-    deviation = (night.hrv_ms - mean) / spread
-    score = night.sleep_score
+    deviation = (night.hrv_ms - mean) / (statistics.stdev(baseline) or 1)
 
-    if deviation < -1 or (score is not None and score < 55):
+    if deviation < LOW_DEVIATION:
         status = "LOW"
-    elif deviation >= -0.5 and (score is None or score >= 70):
+    elif deviation > GOOD_DEVIATION:
         status = "GOOD"
     else:
         status = "OK"
 
     return {
+        "source": "ESTIMATE",
         "status": status,
         "hrv_ms": round(night.hrv_ms),
         "baseline_ms": round(mean),
@@ -80,6 +98,7 @@ def _night_view(row: SleepNight) -> dict:
         "hrv_ms": round(row.hrv_ms) if row.hrv_ms else None,
         "heart_rate": round(row.heart_rate) if row.heart_rate else None,
         "breathing_rate": round(row.breathing_rate, 1) if row.breathing_rate else None,
+        "recharge_status": row.recharge_status,
     }
 
 

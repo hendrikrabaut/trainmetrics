@@ -2,14 +2,17 @@
 
 These are models, not measurements. The frontend labels them as estimates.
 """
+import json
 import math
 from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.endurance_activity import EnduranceActivity
 from app.models.user import User
 from app.models.workout import Workout
+from app.models.workout_stream import WorkoutStream
 from app.models.workout_exercise import WorkoutExercise
 from app.services.analytics import parse_day
 
@@ -104,6 +107,26 @@ def _highest_heart_rate(workouts: list[Workout]) -> int:
     return max(rates, default=DEFAULT_MAX_HEART_RATE)
 
 
+def effort_for(
+    seconds: float,
+    average_heart_rate: float | None,
+    is_endurance: bool,
+    limits: tuple[int, int],
+) -> int:
+    heart_rate_max, heart_rate_rest = limits
+
+    if average_heart_rate:
+        reserve = (average_heart_rate - heart_rate_rest) / max(
+            heart_rate_max - heart_rate_rest,
+            1,
+        )
+        intensity = min(max(reserve, 0), 1)
+    else:
+        intensity = 0.55 if is_endurance else 0.45
+
+    return round(seconds / 60 * intensity * 0.64 * math.exp(1.92 * intensity))
+
+
 def effort_score(
     workout: Workout,
     heart_rate_max: int,
@@ -114,19 +137,13 @@ def effort_score(
     Workouts without heart rate data get a typical intensity for their type.
     """
     activity = workout.endurance_activity
-    seconds = (activity.duration if activity else None) or workout.duration or 1800
-    average = activity.average_heart_rate if activity else None
 
-    if average:
-        reserve = (average - heart_rate_rest) / max(
-            heart_rate_max - heart_rate_rest,
-            1,
-        )
-        intensity = min(max(reserve, 0), 1)
-    else:
-        intensity = 0.55 if activity else 0.45
-
-    return round(seconds / 60 * intensity * 0.64 * math.exp(1.92 * intensity))
+    return effort_for(
+        (activity.duration if activity else None) or workout.duration or 1800,
+        activity.average_heart_rate if activity else None,
+        activity is not None,
+        (heart_rate_max, heart_rate_rest),
+    )
 
 
 def fitness_series(
@@ -226,45 +243,85 @@ def running_index_summary(workouts: list[Workout]) -> dict | None:
 def best_recent_run(
     workouts: list[Workout],
     today: date | None = None,
+    efforts: list[dict] | None = None,
 ) -> dict | None:
-    """The recent run that projects to the fastest time over 10 km."""
+    """What projects to the fastest 10 km: a whole run or a stretch within one."""
     cutoff = (today or date.today()) - timedelta(days=BEST_RUN_WINDOW_DAYS)
     best = None
 
-    for workout in workouts:
-        activity = workout.endurance_activity
+    candidates = [
+        (
+            parse_day(workout.date).isoformat(),
+            workout.endurance_activity.distance,
+            workout.endurance_activity.duration,
+            False,
+        )
+        for workout in workouts
+        if workout.endurance_activity is not None
+        and workout.endurance_activity.activity_type == "RUNNING"
+        and workout.endurance_activity.duration
+        and (workout.endurance_activity.distance or 0) >= BEST_RUN_MINIMUM_METERS
+        and parse_day(workout.date) >= cutoff
+    ]
 
-        if (
-            activity is None
-            or activity.activity_type != "RUNNING"
-            or not activity.duration
-            or (activity.distance or 0) < BEST_RUN_MINIMUM_METERS
-            or parse_day(workout.date) < cutoff
-        ):
-            continue
+    candidates += [
+        (effort["date"], effort["meters"], effort["seconds"], True)
+        for effort in efforts or []
+    ]
 
-        predictions = riegel_predictions(activity.distance, activity.duration)
+    for day, distance, seconds, is_stretch in candidates:
+        predictions = riegel_predictions(distance, seconds)
 
         if best is None or predictions["10 km"] < best["predictions"]["10 km"]:
             best = {
-                "date": parse_day(workout.date).isoformat(),
-                "distance": activity.distance,
-                "duration": activity.duration,
+                "date": day,
+                "distance": distance,
+                "duration": round(seconds),
+                "is_stretch": is_stretch,
                 "predictions": predictions,
             }
 
     return best
 
 
+def _recent_run_efforts(db: Session, user_id: int, since: date) -> list[dict]:
+    rows = db.execute(
+        select(Workout.date, WorkoutStream.best_efforts)
+        .join(WorkoutStream, WorkoutStream.workout_id == Workout.id)
+        .join(EnduranceActivity, EnduranceActivity.workout_id == Workout.id)
+        .where(
+            Workout.user_id == user_id,
+            EnduranceActivity.activity_type == "RUNNING",
+        )
+    ).all()
+
+    return [
+        {
+            "date": parse_day(workout_date).isoformat(),
+            "meters": effort["meters"],
+            "seconds": effort["seconds"],
+        }
+        for workout_date, efforts in rows
+        if parse_day(workout_date) >= since
+        for effort in json.loads(efforts)
+        if effort["meters"] >= BEST_RUN_MINIMUM_METERS
+    ]
+
+
 def estimates(db: Session, user_id: int, today: date | None = None) -> dict:
     workouts = load_workouts(db, user_id)
     limits = heart_rate_limits(db, user_id, workouts)
     series = fitness_series(workouts, limits, today)
+    cutoff = (today or date.today()) - timedelta(days=BEST_RUN_WINDOW_DAYS)
 
     return {
         "max_heart_rate": limits[0],
         "running_index": running_index_summary(workouts),
-        "best_run": best_recent_run(workouts, today),
+        "best_run": best_recent_run(
+            workouts,
+            today,
+            _recent_run_efforts(db, user_id, cutoff),
+        ),
         "fitness": series[-1] if series else None,
         "fitness_series": series,
     }

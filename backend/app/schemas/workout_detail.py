@@ -54,7 +54,6 @@ class EnduranceActivityDetail(BaseModel):
 
 class WorkoutDetailResponse(BaseModel):
     id: int
-    user_id: int
     date: str
     duration: int | None
     notes: str | None

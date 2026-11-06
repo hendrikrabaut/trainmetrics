@@ -3,8 +3,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_user_id
 from app.models.equipment import Equipment
 from app.models.workout import Workout
+from app.services.gear import gear_usage
 from app.schemas.equipment import (
     EquipmentCreate,
     EquipmentResponse,
@@ -30,6 +32,24 @@ def _get_equipment_or_404(equipment_id: int, db: Session) -> Equipment:
     return equipment
 
 
+def _keep_one_default(db: Session, equipment: Equipment) -> None:
+    """Two defaults for one sport would count the same kilometers twice."""
+    if not equipment.is_default:
+        return
+
+    others = db.scalars(
+        select(Equipment).where(
+            Equipment.user_id == equipment.user_id,
+            Equipment.sport == equipment.sport,
+            Equipment.id != equipment.id,
+            Equipment.is_default.is_(True),
+        )
+    ).all()
+
+    for other in others:
+        other.is_default = False
+
+
 def _get_workout_or_404(workout_id: int, db: Session) -> Workout:
     workout = db.get(Workout, workout_id)
 
@@ -42,9 +62,13 @@ def _get_workout_or_404(workout_id: int, db: Session) -> Workout:
     return workout
 
 
-@router.get("/equipment/", response_model=list[EquipmentResponse])
-def get_all_equipment(db: Session = Depends(get_db)):
-    return db.scalars(select(Equipment).order_by(Equipment.name)).all()
+@router.get("/equipment/")
+def get_all_equipment(
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """Everything, with how far it has been used."""
+    return gear_usage(db, user_id)
 
 
 @router.get("/equipment/{equipment_id}", response_model=EquipmentResponse)
@@ -58,11 +82,15 @@ def get_equipment(
 @router.post("/equipment/", response_model=EquipmentResponse)
 def create_equipment(
     equipment: EquipmentCreate,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
-    new_equipment = Equipment(**equipment.model_dump())
+    new_equipment = Equipment(user_id=user_id, **equipment.model_dump())
+    new_equipment.replace_after_km = new_equipment.replace_after_km or None
 
     db.add(new_equipment)
+    db.flush()
+    _keep_one_default(db, new_equipment)
     db.commit()
     db.refresh(new_equipment)
 
@@ -77,9 +105,22 @@ def update_equipment(
 ):
     equipment = _get_equipment_or_404(equipment_id, db)
 
+    required = {"name", "status", "is_default"}
+
     for field, value in equipment_update.model_dump(exclude_unset=True).items():
+        if value is None and field in required:
+            raise HTTPException(status_code=422, detail=f"{field} mag niet leeg zijn")
+
         setattr(equipment, field, value)
 
+    # A limit of zero says nothing, so it means no limit.
+    equipment.replace_after_km = equipment.replace_after_km or None
+
+    # Gear without a sport cannot be the default for one.
+    if equipment.sport is None:
+        equipment.is_default = False
+
+    _keep_one_default(db, equipment)
     db.commit()
     db.refresh(equipment)
 

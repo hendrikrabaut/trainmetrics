@@ -4,7 +4,6 @@ from app.schemas.common import IsoDate, NonNegativeFloat
 
 
 class BodyMeasurementCreate(BaseModel):
-    user_id: int
     date: IsoDate
     weight: NonNegativeFloat | None = None
     body_fat: NonNegativeFloat | None = None
@@ -24,7 +23,6 @@ class BodyMeasurementUpdate(BaseModel):
 
 class BodyMeasurementResponse(BaseModel):
     id: int
-    user_id: int
     date: str
     weight: float | None
     body_fat: float | None

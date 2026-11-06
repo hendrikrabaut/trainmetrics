@@ -43,7 +43,7 @@ def fake_ollama(monkeypatch):
 def test_coach_sends_calculated_data_and_cleans_the_answer(client, fake_ollama):
     client.post(
         "/api/body-measurements/",
-        json={"user_id": 1, "date": "2026-10-01", "weight": 90.4},
+        json={"date": "2026-10-01", "weight": 90.4},
     )
 
     response = client.post("/api/coach/ask", json={"question": "Hoe gaat het?"})

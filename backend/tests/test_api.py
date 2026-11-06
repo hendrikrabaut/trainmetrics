@@ -9,7 +9,6 @@ def _strength(client, exercise_id, day, sets):
     response = client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": day,
             "type": "STRENGTH",
             "exercises": [
@@ -36,8 +35,18 @@ def test_frontend_is_served(client):
 
 def test_foreign_keys_are_enforced(client):
     response = client.post(
+        "/api/workouts/999/exercises",
+        json={"exercise_id": 1, "exercise_order": 1},
+    )
+    assert response.status_code == 404
+
+    workout = client.post(
         "/api/workouts/",
-        json={"user_id": 999, "date": "2026-10-01", "type": "STRENGTH"},
+        json={"date": "2026-10-01", "type": "STRENGTH"},
+    ).json()
+    response = client.post(
+        f"/api/workouts/{workout['id']}/exercises",
+        json={"exercise_id": 999, "exercise_order": 1},
     )
     assert response.status_code == 409
 
@@ -59,9 +68,9 @@ def test_deleting_a_workout_removes_its_children(client):
 
 def test_invalid_values_are_rejected(client):
     invalid = [
-        {"user_id": 1, "date": "gisteren", "type": "STRENGTH"},
-        {"user_id": 1, "date": "2026-10-01", "type": "YOGA"},
-        {"user_id": 1, "date": "2026-10-01", "type": "STRENGTH", "duration": -5},
+        {"date": "gisteren", "type": "STRENGTH"},
+        {"date": "2026-10-01", "type": "YOGA"},
+        {"date": "2026-10-01", "type": "STRENGTH", "duration": -5},
     ]
 
     for body in invalid:
@@ -72,7 +81,6 @@ def test_average_speed_is_calculated_in_meters_per_second(client):
     response = client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": "2026-10-01",
             "type": "ENDURANCE",
             "endurance_activity": {
@@ -99,24 +107,53 @@ def test_workout_list_includes_details(client):
 def test_body_measurement_can_be_created(client):
     response = client.post(
         "/api/body-measurements/",
-        json={"user_id": 1, "date": "2026-10-01", "weight": 90.4},
+        json={"date": "2026-10-01", "weight": 90.4},
     )
     assert response.status_code == 200, response.text
 
 
-def test_users_can_be_read_and_updated(client):
-    assert client.get("/api/users/").json()[0]["name"] == "Test"
+def test_there_is_one_profile(client):
+    assert client.get("/api/profile/").json()["name"] == "Test"
 
-    response = client.patch("/api/users/1", json={"name": "Nieuw"})
-
+    response = client.patch("/api/profile/", json={"name": "Nieuw"})
     assert response.json()["name"] == "Nieuw"
-    assert client.get("/api/users/404").status_code == 404
+
+    second = client.post("/api/profile/", json={"name": "Twee", "email": "b@example.com"})
+    assert second.status_code == 409
+
+
+def test_no_response_exposes_or_accepts_a_user(client):
+    workout = client.post(
+        "/api/workouts/",
+        json={"user_id": 999, "date": "2026-10-01", "type": "STRENGTH"},
+    )
+
+    assert workout.status_code == 200
+    assert "user_id" not in workout.json()
+    assert client.get("/api/workouts/").json()[0]["id"] == workout.json()["id"]
+
+
+def test_without_a_profile_the_app_asks_for_one(client):
+    from sqlalchemy import text
+
+    from app.database import engine
+
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM users"))
+
+    assert client.get("/api/profile/").json() is None
+    assert client.get("/api/game/profile").status_code == 409
+
+    created = client.post("/api/profile/", json={"name": "Nieuw", "email": "n@example.com"})
+
+    assert created.status_code == 200
+    assert client.get("/api/game/profile").status_code == 200
 
 
 def test_equipment_crud_and_workout_link(client):
     created = client.post(
         "/api/equipment/",
-        json={"user_id": 1, "name": "Polar Ignite 2", "category": "WEARABLE"},
+        json={"name": "Polar Ignite 2", "category": "WEARABLE"},
     )
     assert created.status_code == 200, created.text
     equipment_id = created.json()["id"]
@@ -127,7 +164,7 @@ def test_equipment_crud_and_workout_link(client):
 
     workout_id = client.post(
         "/api/workouts/",
-        json={"user_id": 1, "date": "2026-10-01", "type": "ENDURANCE"},
+        json={"date": "2026-10-01", "type": "ENDURANCE"},
     ).json()["id"]
 
     url = f"/api/workouts/{workout_id}/equipment"
@@ -179,7 +216,6 @@ def test_weekly_summary_covers_every_week(client):
     client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": (monday - timedelta(days=1)).isoformat(),
             "type": "ENDURANCE",
             "endurance_activity": {"activity_type": "CYCLING", "distance": 40000},

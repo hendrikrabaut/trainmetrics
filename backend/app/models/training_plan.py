@@ -45,5 +45,6 @@ class PlanSession(Base):
     description: Mapped[str] = mapped_column(String, nullable=False)
     distance: Mapped[float | None] = mapped_column(Float)
     duration: Mapped[int | None] = mapped_column(Integer)
+    phase: Mapped[str | None] = mapped_column(String)
 
     plan: Mapped[TrainingPlan] = relationship(back_populates="sessions")

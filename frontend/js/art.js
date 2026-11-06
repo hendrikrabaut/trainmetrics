@@ -1,5 +1,3 @@
-"use strict";
-
 /* Icons, rewards and maps. See assets/CREDITS.md for where they come from.
    Only rewards move, and they stop for people who ask for reduced motion. */
 
@@ -20,7 +18,7 @@ const ANIMATED = {
 const reducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function picture(name, className = "", alt = "") {
+export function picture(name, className = "", alt = "") {
   const image = document.createElement("img");
 
   image.src = `assets/${name}.png`;
@@ -59,7 +57,7 @@ function glyph(name, className = "") {
   return icon;
 }
 
-function art(name) {
+export function art(name) {
   if (name === "coach") return coachFigure();
   if (name === "flame") return animatedPicture("fire", "flame-art");
   if (name === "trophy") return animatedPicture("trophy", "trophy-art");
@@ -82,7 +80,7 @@ function coachFigure() {
 }
 
 // What the Coach says. say() replaces it, for example with an answer from the model.
-function coachDialog(text) {
+export function coachDialog(text) {
   const line = document.createElement("p");
   const name = document.createElement("strong");
   const bubble = document.createElement("div");
@@ -146,7 +144,7 @@ const MAP_ATTRIBUTION =
   '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
 
 // Draws routes on a map. Each route is { points, label }.
-async function drawRoutes(element, routes, { markEnds = false } = {}) {
+export async function drawRoutes(element, routes, { markEnds = false } = {}) {
   const L = await loadLeaflet();
   const map = L.map(element, { scrollWheelZoom: false });
 
@@ -192,7 +190,7 @@ async function drawRoutes(element, routes, { markEnds = false } = {}) {
 
 const CONFETTI_COLORS = ["#6E0D25", "#FAAA8D", "#AFD2E9", "#00272B", "#93A8AC"];
 
-function confetti(pieces = 70) {
+export function confetti(pieces = 70) {
   if (reducedMotion()) return;
 
   const layer = document.createElement("div");

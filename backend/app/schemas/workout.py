@@ -5,7 +5,6 @@ from app.schemas.common import IsoDate, NonNegativeInt, WorkoutType
 # workouts
 
 class WorkoutCreate(BaseModel):
-    user_id: int
     date: IsoDate
     duration: NonNegativeInt | None = None
     notes: str | None = None
@@ -19,7 +18,6 @@ class WorkoutUpdate(BaseModel):
 
 class WorkoutResponse(BaseModel):
     id: int
-    user_id: int
     date: str
     duration: int | None
     notes: str | None

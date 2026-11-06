@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.race import Race
 from app.models.training_plan import PlanSession, TrainingPlan
 from app.services.analytics import parse_day
 from app.services.estimates import (
@@ -23,6 +24,9 @@ MAX_WEEKLY_GROWTH = 1.10
 DELOAD_EVERY = 4
 DELOAD_FACTOR = 0.7
 TAPER_FACTOR = 0.55
+RACE_WEEK_FACTOR = 0.7
+COMPLETED_FROM = 0.5
+ON_TARGET_MARGIN = 0.2
 BASELINE_WEEKS = 8
 
 SLOTS = {
@@ -38,15 +42,29 @@ SLOTS = {
 RUN_GOALS = {
     "5K": (9000, 6000, 5000),
     "10K": (14000, 10000, 10000),
+    "5MI": (11000, 8000, 8047),
+    "10MI": (17000, 13000, 16093),
     "HALF": (19000, 16000, 21098),
+    "MARATHON": (32000, 28000, 42195),
 }
-TRIATHLON_LONG_RUN = (15000, 10000)
+
+# Peak and shortest long run, and how far bike (minutes) and swim (meters) grow.
+TRIATHLON_GOALS = {
+    "TRIATHLON": {"long_run": (15000, 10000), "bike": (60, 150), "swim": (1000, 2000)},
+    "TRI_QUARTER": {"long_run": (13000, 9000), "bike": (60, 135), "swim": (800, 1500)},
+    "TRI_HALF": {"long_run": (20000, 16000), "bike": (90, 240), "swim": (1200, 2800)},
+}
 
 GOAL_NAMES = {
     "5K": "5 km",
     "10K": "10 km",
+    "5MI": "5 mijl",
+    "10MI": "10 mijl",
     "HALF": "halve marathon",
+    "MARATHON": "marathon",
     "TRIATHLON": "triatlon",
+    "TRI_QUARTER": "1/4 triatlon",
+    "TRI_HALF": "1/2 triatlon",
     "STRENGTH": "kracht",
     "FITNESS": "algemene conditie",
 }
@@ -54,13 +72,18 @@ GOAL_NAMES = {
 WEEKS_BY_GOAL = {
     "5K": 8,
     "10K": 10,
+    "5MI": 9,
+    "10MI": 11,
     "HALF": 12,
+    "MARATHON": 18,
     "TRIATHLON": 12,
+    "TRI_QUARTER": 14,
+    "TRI_HALF": 20,
     "STRENGTH": 8,
     "FITNESS": 8,
 }
 
-MINIMUM_SESSIONS = {"TRIATHLON": 3}
+MINIMUM_SESSIONS = {goal: 3 for goal in TRIATHLON_GOALS}
 
 
 class PlanError(ValueError):
@@ -122,15 +145,42 @@ def _longest_recent(workouts, sport: str, today: date) -> float:
     )
 
 
+def _taper_weeks(weeks: int) -> int:
+    if weeks >= 10:
+        return 2
+
+    return 1 if weeks >= 4 else 0
+
+
+def phase_of_week(week: int, weeks: int) -> str:
+    """Base lays the foundation, build adds speed, peak makes it race specific."""
+    taper = _taper_weeks(weeks)
+
+    if weeks - week < taper:
+        return "TAPER"
+
+    training_weeks = weeks - taper
+    share = (week - 1) / max(training_weeks, 1)
+
+    if share < 0.45:
+        return "BASE"
+
+    return "BUILD" if share < 0.8 else "PEAK"
+
+
 def _build_curve(start: float, peak: float, weeks: int) -> list[float]:
     """Weekly size of the long session."""
-    taper_weeks = 1 if weeks >= 4 else 0
+    taper_weeks = _taper_weeks(weeks)
     curve = []
     current = start
 
     for week in range(1, weeks + 1):
-        if weeks - week < taper_weeks:
-            curve.append(max(curve) * TAPER_FACTOR)
+        left = weeks - week
+
+        if left < taper_weeks:
+            # Two taper weeks step down, a single one goes straight to the lowest.
+            factor = TAPER_FACTOR if left == 0 else (1 + TAPER_FACTOR) / 2
+            curve.append(max(curve) * factor)
         elif week % DELOAD_EVERY == 0:
             curve.append(current * DELOAD_FACTOR)
         else:
@@ -144,11 +194,14 @@ def _kilometers(meters: float) -> str:
     return f"{meters / 1000:.1f}".replace(".", ",") + " km"
 
 
-def _run_week(goal, long_run, week, paces) -> list[Draft]:
+def _run_week(goal, long_run, week, paces, phase="BUILD") -> list[Draft]:
     intervals = {
         "5K": "6 × 400 m stevig, met 90 seconden wandelen of joggen ertussen.",
         "10K": "5 × 800 m stevig, met 2 minuten joggen ertussen.",
+        "5MI": "5 × 1000 m stevig, met 2 minuten joggen ertussen.",
+        "10MI": "4 × 1500 m stevig, met 2 minuten joggen ertussen.",
         "HALF": "4 × 1500 m stevig, met 2 minuten joggen ertussen.",
+        "MARATHON": "3 × 3000 m vlot, met 3 minuten joggen ertussen.",
     }[goal]
 
     quality = (
@@ -166,6 +219,27 @@ def _run_week(goal, long_run, week, paces) -> list[Draft]:
             f"uitlopen.{_pace_text(paces, 'tempo')}",
         )
     )
+
+    if phase == "BASE":
+        quality = Draft(
+            "RUNNING",
+            "Rustige loop met versnellingen",
+            f"Rustig lopen, met op het einde 6 keer 20 seconden vlot en ontspannen."
+            f"{_pace_text(paces, 'easy')}",
+        )
+    elif phase == "PEAK":
+        quality = Draft(
+            "RUNNING",
+            "Wedstrijdtempo",
+            f"15 minuten inlopen, 3 keer 10 minuten op je wedstrijdtempo met 3 minuten "
+            f"rustig ertussen, 10 minuten uitlopen.{_pace_text(paces, 'tempo')}",
+        )
+    elif phase == "TAPER":
+        quality = Draft(
+            "RUNNING",
+            "Scherp blijven",
+            f"Kort en fris: 20 minuten rustig, met 4 keer 1 minuut vlot.{_pace_text(paces, 'tempo')}",
+        )
 
     easy = long_run * 0.6
 
@@ -195,9 +269,14 @@ def _run_week(goal, long_run, week, paces) -> list[Draft]:
     ]
 
 
-def _triathlon_week(long_run, share, week, paces) -> list[Draft]:
-    bike_minutes = round(60 + 90 * share)
-    swim_meters = round((1000 + 1000 * share) / 100) * 100
+def _triathlon_week(goal, long_run, size, week, paces) -> list[Draft]:
+    """Size follows the long run, so lighter weeks and the taper count for all."""
+    settings = TRIATHLON_GOALS[goal]
+    bike_low, bike_high = settings["bike"]
+    swim_low, swim_high = settings["swim"]
+
+    bike_minutes = round(max(bike_low * 0.7, bike_high * size))
+    swim_meters = round(max(swim_low * 0.7, swim_high * size) / 100) * 100
 
     return [
         Draft(
@@ -311,6 +390,26 @@ def _archive_active(db: Session, user_id: int, today: date) -> None:
         ]
 
 
+def _races_within(
+    db: Session,
+    user_id: int,
+    start: date,
+    weeks: int,
+    main_race: date | None,
+) -> list[Race]:
+    """The races on the way, as the plan makes room for them."""
+    end = start + timedelta(weeks=weeks)
+
+    return [
+        race
+        for race in db.scalars(
+            select(Race).where(Race.user_id == user_id).order_by(Race.date)
+        )
+        if start <= parse_day(race.date) < end
+        and (main_race is None or parse_day(race.date) < main_race)
+    ]
+
+
 def _check_weekdays(goal: str, weekdays: list[int]) -> list[int]:
     days = sorted(set(weekdays))
 
@@ -325,11 +424,24 @@ def _check_weekdays(goal: str, weekdays: list[int]) -> list[int]:
     return days
 
 
+def _long_run_limits(goal: str) -> tuple[int, int]:
+    """The peak long run, and the shortest that still prepares you."""
+    if goal in RUN_GOALS:
+        return RUN_GOALS[goal][:2]
+
+    return TRIATHLON_GOALS[goal]["long_run"]
+
+
+def _race_sport(goal: str | None) -> str:
+    """A triathlon starts in the water, so that is what its day counts as."""
+    return "SWIMMING" if goal in TRIATHLON_GOALS else "RUNNING"
+
+
 def _first_long_run(goal: str, workouts, today: date) -> float | None:
-    if goal not in RUN_GOALS and goal != "TRIATHLON":
+    if goal not in RUN_GOALS and goal not in TRIATHLON_GOALS:
         return None
 
-    peak = RUN_GOALS[goal][0] if goal in RUN_GOALS else TRIATHLON_LONG_RUN[0]
+    peak = _long_run_limits(goal)[0]
     longest = _longest_recent(workouts, "RUNNING", today)
 
     return max(min(longest, peak * 0.9), peak * 0.4)
@@ -339,9 +451,7 @@ def _curve(goal: str, first: float | None, weeks: int) -> list[float]:
     if first is None:
         return [1.0] * weeks
 
-    peak = RUN_GOALS[goal][0] if goal in RUN_GOALS else TRIATHLON_LONG_RUN[0]
-
-    return _build_curve(first, peak, weeks)
+    return _build_curve(first, _long_run_limits(goal)[0], weeks)
 
 
 def _build_sessions(
@@ -352,18 +462,30 @@ def _build_sessions(
     race_date: date | None,
     curve: list[float],
     paces,
+    other_races: list[Race] = (),
 ) -> list[PlanSession]:
     sessions = []
+    race_weeks = {
+        (parse_day(race.date) - start).days // 7 + 1: race for race in other_races
+    }
 
     for index in range(weeks):
         week = index + 1
         share = index / max(weeks - 1, 1)
         deload = week % DELOAD_EVERY == 0
+        phase = phase_of_week(week, weeks)
+        lighter = RACE_WEEK_FACTOR if week in race_weeks else 1
 
         if goal in RUN_GOALS:
-            drafts = _run_week(goal, curve[index], week, paces)
-        elif goal == "TRIATHLON":
-            drafts = _triathlon_week(curve[index], share, week, paces)
+            drafts = _run_week(goal, curve[index] * lighter, week, paces, phase)
+        elif goal in TRIATHLON_GOALS:
+            drafts = _triathlon_week(
+                goal,
+                curve[index] * lighter,
+                curve[index] * lighter / max(curve),
+                week,
+                paces,
+            )
         elif goal == "STRENGTH":
             drafts = _strength_week(week, deload)
         else:
@@ -387,18 +509,45 @@ def _build_sessions(
                     description=draft.description,
                     distance=round(draft.distance) if draft.distance else None,
                     duration=draft.duration,
+                    phase=phase,
                 )
             )
+
+    for race in other_races:
+        day = parse_day(race.date)
+
+        if race_date is not None and day >= race_date:
+            continue
+
+        # A training on the day itself gives way to the race.
+        sessions = [session for session in sessions if session.date != race.date]
+        sessions.append(
+            PlanSession(
+                date=race.date,
+                week=(day - start).days // 7 + 1,
+                sport=_race_sport(race.goal),
+                title=f"Wedstrijd: {race.name}",
+                description=(
+                    "Geen hoofddoel, dus zie ze als een stevige training. "
+                    "Rust erna een dag extra."
+                    if race.priority == "B"
+                    else "Vooral voor het plezier en de ervaring. Niet alles geven."
+                ),
+                distance=RUN_GOALS[race.goal][2] if race.goal in RUN_GOALS else None,
+                phase=phase_of_week((day - start).days // 7 + 1, weeks),
+            )
+        )
 
     if race_date is not None:
         sessions.append(
             PlanSession(
                 date=race_date.isoformat(),
                 week=weeks,
-                sport="SWIMMING" if goal == "TRIATHLON" else "RUNNING",
+                sport=_race_sport(goal),
                 title="Wedstrijddag",
                 description="Dit is waar je voor getraind hebt. Begin rustig en geniet ervan.",
                 distance=RUN_GOALS[goal][2] if goal in RUN_GOALS else None,
+                phase="RACE",
             )
         )
 
@@ -442,7 +591,7 @@ def create_plan(
     warning = None
 
     if first is not None:
-        minimum = RUN_GOALS[goal][1] if goal in RUN_GOALS else TRIATHLON_LONG_RUN[1]
+        minimum = _long_run_limits(goal)[1]
 
         if max(curve) < minimum:
             warning = (
@@ -463,7 +612,14 @@ def create_plan(
     )
 
     plan.sessions = _build_sessions(
-        goal, start, weeks, days, race_date, curve, _paces(workouts)
+        goal,
+        start,
+        weeks,
+        days,
+        race_date,
+        curve,
+        _paces(workouts),
+        _races_within(db, user_id, start, weeks, race_date),
     )
     plan.sessions.sort(key=lambda session: session.date)
     plan.end_date = plan.sessions[-1].date
@@ -529,6 +685,7 @@ def reschedule_plan(
         race_date,
         _curve(plan.goal, first, weeks),
         _paces(workouts),
+        _races_within(db, plan.user_id, start, weeks, race_date),
     )
 
     plan.sessions = [
@@ -669,11 +826,27 @@ def _workout_sport(workout) -> str:
     return workout.type
 
 
-def match_sessions(sessions, workouts) -> dict[int, int]:
-    """Session id -> workout id.
+def _ratio(session, workout) -> float | None:
+    """How much of the planned distance or time was done. None if nothing to compare."""
+    activity = workout.endurance_activity
 
-    A session counts when a workout of that sport happens in the same week, so
-    moving a training by a day does not lose it. Each workout counts only once.
+    if session.distance and activity and activity.distance:
+        return activity.distance / session.distance
+
+    seconds = (activity.duration if activity else None) or workout.duration
+
+    if session.duration and seconds:
+        return seconds / session.duration
+
+    return None
+
+
+def match_details(sessions, workouts) -> dict[int, tuple]:
+    """Session id -> (workout, ratio).
+
+    A session belongs to a workout of its sport in the same week, so moving a
+    training by a day does not lose it. The closest day goes first, and each
+    workout counts only once.
     """
     available: dict[tuple, list] = {}
 
@@ -683,15 +856,50 @@ def match_sessions(sessions, workouts) -> dict[int, int]:
         available.setdefault(key, []).append(workout)
 
     matched = {}
+    ordered = sorted(sessions, key=lambda item: item.date)
 
-    for session in sorted(sessions, key=lambda item: item.date):
-        day = parse_day(session.date)
-        candidates = available.get((day.isocalendar()[:2], session.sport), [])
+    # Workouts on the planned day first, so another session cannot take them.
+    for only_same_day in (True, False):
+        for session in ordered:
+            if session.id in matched:
+                continue
 
-        if candidates:
-            matched[session.id] = candidates.pop(0).id
+            day = parse_day(session.date)
+            candidates = available.get((day.isocalendar()[:2], session.sport), [])
+            options = [
+                workout
+                for workout in candidates
+                if not only_same_day or parse_day(workout.date) == day
+            ]
+
+            if options:
+                workout = min(
+                    options,
+                    key=lambda item: abs((parse_day(item.date) - day).days),
+                )
+                candidates.remove(workout)
+                matched[session.id] = (workout, _ratio(session, workout))
 
     return matched
+
+
+def match_sessions(sessions, workouts) -> dict[int, int]:
+    """Session id -> workout id, for sessions that were really done."""
+    return {
+        session_id: workout.id
+        for session_id, (workout, ratio) in match_details(sessions, workouts).items()
+        if ratio is None or ratio >= COMPLETED_FROM
+    }
+
+
+def _compliance(ratio: float | None) -> str | None:
+    if ratio is None:
+        return None
+
+    if ratio < 1 - ON_TARGET_MARGIN:
+        return "SHORT"
+
+    return "LONG" if ratio > 1 + ON_TARGET_MARGIN else "ON_TARGET"
 
 
 def active_plan(db: Session, user_id: int) -> TrainingPlan | None:
@@ -707,26 +915,71 @@ def active_plan(db: Session, user_id: int) -> TrainingPlan | None:
 
 def plan_view(db: Session, plan: TrainingPlan, today: date | None = None) -> dict:
     today = today or date.today()
-    matched = match_sessions(plan.sessions, load_workouts(db, plan.user_id))
+    matched = match_details(plan.sessions, load_workouts(db, plan.user_id))
+    this_week = today - timedelta(days=today.weekday())
+    sessions = []
 
-    sessions = [
-        {
-            "id": session.id,
-            "date": session.date,
-            "week": session.week,
-            "sport": session.sport,
-            "title": session.title,
-            "description": session.description,
-            "distance": session.distance,
-            "duration": session.duration,
-            "completed": session.id in matched,
-            "missed": (
-                session.id not in matched
-                and parse_day(session.date) < today - timedelta(days=today.weekday())
-            ),
-        }
-        for session in plan.sessions
-    ]
+    for session in plan.sessions:
+        workout, ratio = matched.get(session.id, (None, None))
+        completed = workout is not None and (ratio is None or ratio >= COMPLETED_FROM)
+        activity = workout.endurance_activity if workout else None
+
+        sessions.append(
+            {
+                "id": session.id,
+                "date": session.date,
+                "week": session.week,
+                "sport": session.sport,
+                "title": session.title,
+                "description": session.description,
+                "distance": session.distance,
+                "duration": session.duration,
+                "phase": session.phase,
+                "completed": completed,
+                "partial": workout is not None and not completed,
+                "missed": workout is None and parse_day(session.date) < this_week,
+                "compliance": _compliance(ratio),
+                "actual": (
+                    {
+                        "workout_id": workout.id,
+                        "date": workout.date[:10],
+                        "distance": activity.distance if activity else None,
+                        "duration": (
+                            (activity.duration if activity else None)
+                            or workout.duration
+                        ),
+                        "ratio": round(ratio, 2) if ratio is not None else None,
+                    }
+                    if workout
+                    else None
+                ),
+            }
+        )
+
+    weeks = {}
+
+    for row in sessions:
+        week = weeks.setdefault(
+            row["week"],
+            {
+                "week": row["week"],
+                "phase": row["phase"],
+                "planned_meters": 0.0,
+                "done_meters": 0.0,
+                "planned_seconds": 0,
+                "done_seconds": 0,
+                "completed": 0,
+                "total": 0,
+            },
+        )
+        week["total"] += 1
+        week["completed"] += row["completed"]
+        week["planned_meters"] += row["distance"] or 0
+        week["planned_seconds"] += row["duration"] or 0
+
+        if row["actual"]:
+            week["done_meters"] += row["actual"]["distance"] or 0
+            week["done_seconds"] += row["actual"]["duration"] or 0
 
     return {
         "id": plan.id,
@@ -737,7 +990,10 @@ def plan_view(db: Session, plan: TrainingPlan, today: date | None = None) -> dic
         "race_date": plan.race_date,
         "warning": plan.warning,
         "weekdays": plan_weekdays(plan),
-        "completed": sum(session["completed"] for session in sessions),
+        "completed": sum(row["completed"] for row in sessions),
         "total": len(sessions),
         "sessions": sessions,
+        "weeks": [weeks[key] for key in sorted(weeks)],
     }
+
+

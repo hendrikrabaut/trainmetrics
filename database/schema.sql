@@ -130,6 +130,9 @@ CREATE TABLE equipment (
     purchase_date TEXT,
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     notes TEXT,
+    sport TEXT,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    replace_after_km REAL,
 
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -198,6 +201,7 @@ CREATE TABLE plan_sessions (
     description TEXT NOT NULL,
     distance REAL,    -- meters
     duration INTEGER, -- seconds
+    phase TEXT,       -- BASE, BUILD, PEAK, TAPER or RACE
 
     FOREIGN KEY (plan_id) REFERENCES training_plans(id) ON DELETE CASCADE
 );
@@ -222,6 +226,8 @@ CREATE TABLE sleep_nights (
     hrv_ms REAL,
     heart_rate REAL,      -- bpm
     breathing_rate REAL,  -- breaths per minute
+    recharge_status INTEGER, -- Polar's verdict: 1 very poor to 6 very good
+    ans_charge REAL,         -- Polar's -10 to +10
 
     PRIMARY KEY (user_id, night),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -236,5 +242,53 @@ CREATE TABLE workout_routes (
     workout_id INTEGER PRIMARY KEY,
     points TEXT NOT NULL, -- JSON list of [latitude, longitude], simplified
 
+    FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+);
+
+
+-- ============================================
+-- MEASUREMENTS, RACES AND SEGMENTS
+-- ============================================
+
+CREATE TABLE workout_streams (
+    workout_id INTEGER PRIMARY KEY,
+    interval_seconds INTEGER NOT NULL,
+    data TEXT NOT NULL,         -- JSON, thinned series
+    splits TEXT NOT NULL,       -- JSON
+    zones TEXT NOT NULL,        -- JSON
+    best_efforts TEXT NOT NULL, -- JSON
+
+    FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE races (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    date TEXT NOT NULL,
+    priority TEXT NOT NULL, -- A, B or C
+    goal TEXT,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE segments (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    sport TEXT NOT NULL,
+    points TEXT NOT NULL, -- JSON list of [latitude, longitude]
+    length_meters REAL NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE segment_efforts (
+    segment_id INTEGER NOT NULL,
+    workout_id INTEGER NOT NULL,
+    seconds INTEGER NOT NULL,
+
+    PRIMARY KEY (segment_id, workout_id),
+    FOREIGN KEY (segment_id) REFERENCES segments(id) ON DELETE CASCADE,
     FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
 );

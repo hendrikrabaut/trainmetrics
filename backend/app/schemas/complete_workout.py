@@ -12,7 +12,6 @@ class CompleteExerciseCreate(BaseModel):
 
 
 class CompleteWorkoutCreate(BaseModel):
-    user_id: int
     date: IsoDate
     duration: NonNegativeInt | None = None
     notes: str | None = None

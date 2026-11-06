@@ -19,7 +19,6 @@ def _lift(client, exercise_id, day, weight=60, reps=10):
     response = client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": day.isoformat(),
             "type": "STRENGTH",
             "duration": 3000,
@@ -40,7 +39,6 @@ def _run(client, day, distance=10000, duration=3000, sport="RUNNING"):
     response = client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": day.isoformat(),
             "type": "ENDURANCE",
             "endurance_activity": {
@@ -63,7 +61,7 @@ def _profile(client):
 
 @pytest.mark.parametrize(
     "xp, level",
-    [(0, 1), (99, 1), (100, 2), (299, 2), (300, 3), (4500, 10)],
+    [(0, 1), (299, 1), (300, 2), (899, 2), (900, 3), (13500, 10), (15241, 10)],
 )
 def test_levels(xp, level):
     assert level_for_xp(xp) == level
@@ -246,7 +244,13 @@ def test_no_plan_yet(client):
     assert client.get("/api/plans/active").json() is None
 
 
-@pytest.mark.parametrize("goal", ["5K", "10K", "HALF", "TRIATHLON", "STRENGTH", "FITNESS"])
+@pytest.mark.parametrize(
+    "goal",
+    [
+        "5K", "5MI", "10K", "10MI", "HALF", "MARATHON",
+        "TRIATHLON", "TRI_QUARTER", "TRI_HALF", "STRENGTH", "FITNESS",
+    ],
+)
 @pytest.mark.parametrize("sessions", [3, 4, 7])
 def test_every_goal_gives_a_full_plan(client, goal, sessions):
     plan = _plan(client, goal=goal, sessions_per_week=sessions, weeks=8)
@@ -661,25 +665,39 @@ def _nights(values, last_score=80, last_day=TODAY):
 
 
 @pytest.mark.parametrize(
-    "last, score, status",
-    [
-        (80, 80, "GOOD"),
-        (120, 80, "GOOD"),
-        (40, 80, "LOW"),
-        (80, 40, "LOW"),
-        (80, 60, "OK"),
-        (78.5, 80, "OK"),
-    ],
+    "last, status",
+    [(90, "GOOD"), (80, "OK"), (78.5, "OK"), (70, "LOW")],
 )
-def test_recovery_compares_with_your_own_normal(client, last, score, status):
-    _nights([78, 82] * 7 + [last], last_score=score)
+def test_estimated_recovery_compares_with_your_own_normal(client, last, status):
+    _nights([78, 82] * 7 + [last])
 
-    result = client.get("/api/analytics/sleep").json()
+    recovery = client.get("/api/analytics/sleep").json()["recovery"]
 
-    assert result["recovery"]["status"] == status
-    assert result["recovery"]["baseline_ms"] == 80
-    assert result["recovery"]["baseline_nights"] == 14
-    assert result["is_recent"] is True
+    assert recovery["source"] == "ESTIMATE"
+    assert recovery["status"] == status
+    assert recovery["baseline_ms"] == 80
+    assert recovery["baseline_nights"] == 14
+
+
+@pytest.mark.parametrize(
+    "polar, status",
+    [(1, "LOW"), (2, "LOW"), (3, "OK"), (4, "OK"), (5, "GOOD"), (6, "GOOD")],
+)
+def test_polars_own_verdict_goes_first(client, polar, status):
+    from app.database import SessionLocal
+    from app.models.sleep_night import SleepNight
+
+    _nights([78, 82] * 7 + [60])
+
+    with SessionLocal() as db:
+        db.get(SleepNight, (1, TODAY.isoformat())).recharge_status = polar
+        db.commit()
+
+    recovery = client.get("/api/analytics/sleep").json()["recovery"]
+
+    assert recovery["source"] == "POLAR"
+    assert recovery["recharge_status"] == polar
+    assert recovery["status"] == status
 
 
 def test_recovery_needs_enough_nights(client):

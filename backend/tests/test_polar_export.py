@@ -148,7 +148,6 @@ def test_the_same_training_from_the_api_is_enriched_not_doubled(client, tmp_path
     client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": "2026-05-17T10:00:00",
             "type": "ENDURANCE",
             "endurance_activity": {"activity_type": "RUNNING", "distance": 5000},

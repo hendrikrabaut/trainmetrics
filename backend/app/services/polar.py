@@ -20,8 +20,14 @@ from app.models.endurance_activity import EnduranceActivity
 from app.models.polar_account import PolarAccount
 from app.models.workout import Workout
 from app.schemas.common import speed_in_meters_per_second
-from app.services.importers import activity_type_for_sport
+from app.services.importers import (
+    ActivityFileError,
+    activity_type_for_sport,
+    parse_activity_file,
+)
 from app.services.routes import store_route
+from app.services.segments import match_workout
+from app.services.streams import store_stream
 from app.services.sleep import store_night
 
 
@@ -130,7 +136,7 @@ def register_user(access_token: str, member_id: str) -> None:
 
 def list_exercises(access_token: str) -> list[dict]:
     request = urllib.request.Request(
-        f"{_api_url()}/v3/exercises?route=true",
+        f"{_api_url()}/v3/exercises",
         headers={
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
@@ -225,6 +231,8 @@ def _sync_nights(db: Session, user_id: int, access_token: str) -> int:
                 "hrv_ms": row.get("heart_rate_variability_avg") or None,
                 "heart_rate": row.get("heart_rate_avg") or None,
                 "breathing_rate": row.get("breathing_rate_avg") or None,
+                "recharge_status": row.get("nightly_recharge_status") or None,
+                "ans_charge": row.get("ans_charge"),
             },
         )
         db.flush()
@@ -276,24 +284,47 @@ def _heart_rate(exercise: dict, name: str) -> int | None:
     return round(value) if value else None
 
 
-def _store_route(db: Session, workout_id: int, exercise: dict) -> None:
-    points = [
-        (point.get("latitude"), point.get("longitude"))
-        for point in exercise.get("route") or []
-        if isinstance(point, dict)
-    ]
+def _download_fit(access_token: str, exercise_id: str) -> bytes | None:
+    request = urllib.request.Request(
+        f"{_api_url()}/v3/exercises/{urllib.parse.quote(str(exercise_id), safe='')}/fit",
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "*/*"},
+    )
 
-    store_route(db, workout_id, points)
+    status, body = _request(request)
+
+    return body if status == 200 and body else None
 
 
-def _store(db: Session, user_id: int, exercise: dict) -> str:
+def _store_measurements(
+    db: Session,
+    user_id: int,
+    workout_id: int,
+    sport: str,
+    exercise: dict,
+    access_token: str,
+) -> None:
+    """A training without them still counts, so nothing here may stop the sync."""
+    content = _download_fit(access_token, exercise["id"])
+
+    if content is None:
+        return
+
+    try:
+        activities = parse_activity_file("polar.fit", content)
+    except ActivityFileError:
+        return
+
+    if activities:
+        store_route(db, workout_id, activities[0].route)
+        store_stream(db, workout_id, user_id, sport, activities[0].samples)
+        match_workout(db, user_id, workout_id, sport)
+
+
+def _store(db: Session, user_id: int, exercise: dict, access_token: str) -> str:
     """Stores one exercise. Returns 'imported', 'updated' or 'skipped'."""
     source_hash = f"polar:{exercise['id']}"
 
-    known_id = db.scalar(select(Workout.id).where(Workout.source_hash == source_hash))
-
-    if known_id:
-        _store_route(db, known_id, exercise)
+    if db.scalar(select(Workout.id).where(Workout.source_hash == source_hash)):
         return "skipped"
 
     start = _local_start(exercise)
@@ -306,8 +337,6 @@ def _store(db: Session, user_id: int, exercise: dict) -> str:
     )
 
     if existing is not None:
-        _store_route(db, existing.id, exercise)
-
         if running_index and existing.endurance_activity:
             existing.endurance_activity.running_index = running_index
             return "updated"
@@ -353,7 +382,14 @@ def _store(db: Session, user_id: int, exercise: dict) -> str:
     )
     db.add(workout)
     db.flush()
-    _store_route(db, workout.id, exercise)
+    _store_measurements(
+        db,
+        user_id,
+        workout.id,
+        workout.endurance_activity.activity_type,
+        exercise,
+        access_token,
+    )
 
     return "imported"
 
@@ -367,7 +403,7 @@ def sync(db: Session, user_id: int) -> dict:
     counts = {"imported": 0, "updated": 0, "skipped": 0}
 
     for exercise in list_exercises(account.access_token):
-        counts[_store(db, user_id, exercise)] += 1
+        counts[_store(db, user_id, exercise, account.access_token)] += 1
         db.flush()
 
     counts["nights"] = _sync_nights(db, user_id, account.access_token)

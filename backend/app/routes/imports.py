@@ -5,10 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_user_id
 from app.models.endurance_activity import EnduranceActivity
 from app.models.workout import Workout
 from app.services.importers import ActivityFileError, parse_activity_file
 from app.services.routes import store_route
+from app.services.segments import match_workout
+from app.services.streams import store_stream
 
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -22,7 +25,7 @@ router = APIRouter(
 @router.post("/")
 def import_activity_file(
     file: UploadFile,
-    user_id: int = 1,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     content = file.file.read(MAX_FILE_BYTES + 1)
@@ -74,6 +77,8 @@ def import_activity_file(
         db.add(workout)
         db.flush()
         store_route(db, workout.id, activity.route)
+        store_stream(db, workout.id, user_id, activity.activity_type, activity.samples)
+        match_workout(db, user_id, workout.id, activity.activity_type)
         imported.append(workout)
 
     db.commit()

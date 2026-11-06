@@ -12,7 +12,6 @@ def _run(client, day="2026-10-01", sport="RUNNING"):
     return client.post(
         "/api/workouts/complete",
         json={
-            "user_id": 1,
             "date": day,
             "type": "ENDURANCE",
             "endurance_activity": {"activity_type": sport, "distance": 1000},

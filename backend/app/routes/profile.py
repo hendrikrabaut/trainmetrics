@@ -8,41 +8,29 @@ from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 
 router = APIRouter(
-    prefix="/api/users",
-    tags=["users"],
+    prefix="/api/profile",
+    tags=["profile"],
 )
 
 
-def _get_user_or_404(user_id: int, db: Session) -> User:
-    user = db.get(User, user_id)
-
-    if user is None:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found",
-        )
-
-    return user
+def _profile(db: Session) -> User | None:
+    return db.scalar(select(User).order_by(User.id))
 
 
-@router.get("/", response_model=list[UserResponse])
-def get_users(db: Session = Depends(get_db)):
-    return db.scalars(select(User).order_by(User.id)).all()
-
-
-@router.get("/{user_id}", response_model=UserResponse)
-def get_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-):
-    return _get_user_or_404(user_id, db)
+@router.get("/", response_model=UserResponse | None)
+def get_profile(db: Session = Depends(get_db)):
+    """Empty until the app has been set up."""
+    return _profile(db)
 
 
 @router.post("/", response_model=UserResponse)
-def create_user(
+def create_profile(
     user: UserCreate,
     db: Session = Depends(get_db),
 ):
+    if _profile(db) is not None:
+        raise HTTPException(status_code=409, detail="Er is al een profiel")
+
     new_user = User(name=user.name, email=user.email)
 
     db.add(new_user)
@@ -52,13 +40,15 @@ def create_user(
     return new_user
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
-def update_user(
-    user_id: int,
+@router.patch("/", response_model=UserResponse)
+def update_profile(
     user_update: UserUpdate,
     db: Session = Depends(get_db),
 ):
-    user = _get_user_or_404(user_id, db)
+    user = _profile(db)
+
+    if user is None:
+        raise HTTPException(status_code=404, detail="Er is nog geen profiel")
 
     for field, value in user_update.model_dump(exclude_unset=True).items():
         setattr(user, field, value)

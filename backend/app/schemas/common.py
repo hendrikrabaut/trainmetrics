@@ -23,6 +23,17 @@ HeartRate = Annotated[int, Field(gt=0, le=260)]
 
 WorkoutType = Literal["STRENGTH", "ENDURANCE"]
 ActivityType = Literal["RUNNING", "CYCLING", "SWIMMING", "OTHER"]
+RaceGoal = Literal[
+    "5K",
+    "5MI",
+    "10K",
+    "10MI",
+    "HALF",
+    "MARATHON",
+    "TRI_QUARTER",
+    "TRI_HALF",
+    "TRIATHLON",
+]
 
 
 def speed_in_meters_per_second(

@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_user_id
 from app.models.training_plan import PlanSession
+from app.schemas.common import RaceGoal
 from app.services import plans
 
 
@@ -17,8 +19,7 @@ router = APIRouter(
 
 
 class PlanCreate(BaseModel):
-    user_id: int = 1
-    goal: Literal["5K", "10K", "HALF", "TRIATHLON", "STRENGTH", "FITNESS"]
+    goal: RaceGoal | Literal["STRENGTH", "FITNESS"]
     sessions_per_week: int = Field(4, ge=2, le=7)
     weeks: int | None = Field(None, ge=2, le=30)
     start_date: Date | None = None
@@ -27,7 +28,6 @@ class PlanCreate(BaseModel):
 
 
 class ScheduleUpdate(BaseModel):
-    user_id: int = 1
     weekdays: list[int]
 
 
@@ -59,7 +59,7 @@ def _session_or_404(db: Session, session_id: int) -> PlanSession:
 
 @router.get("/active")
 def get_active_plan(
-    user_id: int = 1,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     plan = plans.active_plan(db, user_id)
@@ -70,12 +70,13 @@ def get_active_plan(
 @router.post("/")
 def create_plan(
     body: PlanCreate,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     try:
         plan = plans.create_plan(
             db,
-            body.user_id,
+            user_id,
             body.goal,
             body.sessions_per_week,
             weeks=body.weeks,
@@ -92,9 +93,10 @@ def create_plan(
 @router.put("/active/schedule")
 def change_schedule(
     body: ScheduleUpdate,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
-    plan = _active_or_404(db, body.user_id)
+    plan = _active_or_404(db, user_id)
 
     try:
         plans.reschedule_plan(db, plan, body.weekdays)
@@ -106,7 +108,7 @@ def change_schedule(
 
 @router.get("/active/calendar.ics")
 def export_calendar(
-    user_id: int = 1,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     plan = _active_or_404(db, user_id)

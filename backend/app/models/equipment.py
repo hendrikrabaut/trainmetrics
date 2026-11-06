@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Table
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -41,3 +41,8 @@ class Equipment(Base):
         default="ACTIVE",
     )
     notes: Mapped[str | None] = mapped_column(String)
+
+    # The sport it is for, and whether it counts for that sport by default.
+    sport: Mapped[str | None] = mapped_column(String)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    replace_after_km: Mapped[float | None] = mapped_column(Float)

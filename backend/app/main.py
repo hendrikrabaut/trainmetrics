@@ -14,7 +14,9 @@ from app.routes.imports import router as imports_router
 from app.routes.plans import router as plans_router
 from app.routes.polar import router as polar_router
 from app.routes.workout_routes import router as workout_routes_router
-from app.routes.users import router as users_router
+from app.routes.profile import router as profile_router
+from app.routes.races import router as races_router
+from app.routes.segments import router as segments_router
 from app.routes.workouts import router as workouts_router
 from app.routes.exercises import router as exercises_router
 from app.routes.exercise_sets import router as exercise_sets_router
@@ -44,7 +46,9 @@ def handle_integrity_error(_request: Request, _error: IntegrityError):
     )
 
 
-app.include_router(users_router)
+app.include_router(profile_router)
+app.include_router(races_router)
+app.include_router(segments_router)
 app.include_router(workouts_router)
 app.include_router(exercises_router)
 app.include_router(exercise_sets_router)

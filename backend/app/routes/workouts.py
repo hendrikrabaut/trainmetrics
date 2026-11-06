@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
+from app.dependencies import get_user_id
 from app.models.workout import Workout
 from app.schemas.workout import (
     WorkoutCreate,
@@ -32,10 +33,11 @@ router = APIRouter(
 @router.post("/", response_model=WorkoutResponse)
 def create_workout(
     workout: WorkoutCreate,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     new_workout = Workout(
-        user_id=workout.user_id,
+        user_id=user_id,
         date=workout.date,
         duration=workout.duration,
         notes=workout.notes,
@@ -167,10 +169,11 @@ def add_exercise_to_workout(
 @router.post("/complete", response_model=WorkoutDetailResponse)
 def create_complete_workout(
     workout: CompleteWorkoutCreate,
+    user_id: int = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
     new_workout = Workout(
-        user_id=workout.user_id,
+        user_id=user_id,
         date=workout.date,
         duration=workout.duration,
         notes=workout.notes,

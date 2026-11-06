@@ -27,3 +27,8 @@ class SleepNight(Base):
     hrv_ms: Mapped[float | None] = mapped_column(Float)
     heart_rate: Mapped[float | None] = mapped_column(Float)
     breathing_rate: Mapped[float | None] = mapped_column(Float)
+
+    # Polar's own verdict, from 1 (very poor) to 6 (very good). Only the API has
+    # it, for the last 28 days, so nights from the data export have none.
+    recharge_status: Mapped[int | None] = mapped_column(Integer)
+    ans_charge: Mapped[float | None] = mapped_column(Float)

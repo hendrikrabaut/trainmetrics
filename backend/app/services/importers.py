@@ -13,6 +13,7 @@ import gpxpy
 from gpxpy.gpx import GPXException
 
 from app.schemas.common import speed_in_meters_per_second
+from app.services.streams import samples_from_points
 
 
 TCX_NAMESPACE = "{http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2}"
@@ -36,6 +37,7 @@ class ParsedActivity:
     elevation_gain: float | None = None
     calories: int | None = None
     route: list[tuple[float, float]] = field(default_factory=list)
+    samples: dict = field(default_factory=dict)
 
 
 def activity_type_for_sport(sport: str | None) -> str:
@@ -68,9 +70,10 @@ def _whole(value) -> int | None:
 def _parse_fit(content: bytes) -> list[ParsedActivity]:
     activities = []
     route = []
+    points = []
 
     # A multisport file, like a triathlon, holds one session per discipline.
-    # The GPS records of a session come before the session itself.
+    # The records of a session come before the session itself.
     with fitdecode.FitReader(BytesIO(content)) as reader:
         for frame in reader:
             if frame.frame_type != fitdecode.FIT_FRAME_DATA:
@@ -81,8 +84,33 @@ def _parse_fit(content: bytes) -> list[ParsedActivity]:
                 longitude = frame.get_value("position_long", fallback=None)
 
                 if latitude is not None and longitude is not None:
-                    route.append(
-                        (latitude * FIT_SEMICIRCLE, longitude * FIT_SEMICIRCLE)
+                    latitude *= FIT_SEMICIRCLE
+                    longitude *= FIT_SEMICIRCLE
+                    route.append((latitude, longitude))
+
+                moment = frame.get_value("timestamp", fallback=None)
+
+                if isinstance(moment, datetime):
+                    speed = frame.get_value("enhanced_speed", fallback=None)
+                    height = frame.get_value("enhanced_altitude", fallback=None)
+                    points.append(
+                        {
+                            "time": moment,
+                            "heart_rate": frame.get_value("heart_rate", fallback=None),
+                            "speed": (
+                                speed
+                                if speed is not None
+                                else frame.get_value("speed", fallback=None)
+                            ),
+                            "altitude": (
+                                height
+                                if height is not None
+                                else frame.get_value("altitude", fallback=None)
+                            ),
+                            "distance": frame.get_value("distance", fallback=None),
+                            "latitude": latitude,
+                            "longitude": longitude,
+                        }
                     )
 
                 continue
@@ -91,6 +119,7 @@ def _parse_fit(content: bytes) -> list[ParsedActivity]:
                 continue
 
             session_route, route = route, []
+            session_points, points = points, []
 
             def value(name):
                 return frame.get_value(name, fallback=None)
@@ -129,6 +158,7 @@ def _parse_fit(content: bytes) -> list[ParsedActivity]:
                     elevation_gain=value("total_ascent"),
                     calories=_whole(value("total_calories")),
                     route=session_route,
+                    samples=samples_from_points(session_points),
                 )
             )
 
@@ -147,6 +177,34 @@ def _gpx_heart_rates(track) -> list[int]:
                         rates.append(int(float(element.text)))
 
     return rates
+
+
+def _gpx_points(track) -> list[dict]:
+    points = []
+
+    for segment in track.segments:
+        for point in segment.points:
+            if point.time is None:
+                continue
+
+            rate = None
+
+            for extension in point.extensions:
+                for element in extension.iter():
+                    if element.tag.rsplit("}", 1)[-1] == "hr" and element.text:
+                        rate = float(element.text)
+
+            points.append(
+                {
+                    "time": point.time,
+                    "heart_rate": rate,
+                    "altitude": point.elevation,
+                    "latitude": point.latitude,
+                    "longitude": point.longitude,
+                }
+            )
+
+    return points
 
 
 def _parse_gpx(content: bytes) -> list[ParsedActivity]:
@@ -178,6 +236,7 @@ def _parse_gpx(content: bytes) -> list[ParsedActivity]:
                     for segment in track.segments
                     for point in segment.points
                 ],
+                samples=samples_from_points(_gpx_points(track)),
             )
         )
 
@@ -191,6 +250,39 @@ def _tcx_number(element, *path: str) -> float | None:
         return None
 
     return float(found.text)
+
+
+def _tcx_points(activity) -> list[dict]:
+    points = []
+
+    for point in activity.iter(f"{TCX_NAMESPACE}Trackpoint"):
+        moment = point.findtext(f"{TCX_NAMESPACE}Time")
+
+        if not moment:
+            continue
+
+        position = point.find(f"{TCX_NAMESPACE}Position")
+
+        points.append(
+            {
+                "time": datetime.fromisoformat(moment),
+                "heart_rate": _tcx_number(point, "HeartRateBpm", "Value"),
+                "altitude": _tcx_number(point, "AltitudeMeters"),
+                "distance": _tcx_number(point, "DistanceMeters"),
+                "latitude": (
+                    _tcx_number(position, "LatitudeDegrees")
+                    if position is not None
+                    else None
+                ),
+                "longitude": (
+                    _tcx_number(position, "LongitudeDegrees")
+                    if position is not None
+                    else None
+                ),
+            }
+        )
+
+    return points
 
 
 def _parse_tcx(content: bytes) -> list[ParsedActivity]:
@@ -266,6 +358,7 @@ def _parse_tcx(content: bytes) -> list[ParsedActivity]:
                     )
                     for position in activity.iter(f"{TCX_NAMESPACE}Position")
                 ],
+                samples=samples_from_points(_tcx_points(activity)),
             )
         )
 
