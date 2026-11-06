@@ -1,8 +1,8 @@
 """Imports the "Download your data" archive from account.polar.com.
 
-Only training sessions and the profile values stored with them are read. The
-archive also holds daily activity, sleep and continuous heart rate, which this
-app has no place for yet.
+Training sessions, the profile values stored with them, sleep and nightly
+recovery are read. The archive also holds daily activity and continuous heart
+rate, which this app has no place for yet.
 """
 import json
 from pathlib import Path
@@ -15,6 +15,8 @@ from app.models.endurance_activity import EnduranceActivity
 from app.models.user import User
 from app.models.workout import Workout
 from app.schemas.common import speed_in_meters_per_second
+from app.services.polar import parse_duration
+from app.services.sleep import store_night
 
 
 STRENGTH = "STRENGTH"
@@ -158,6 +160,80 @@ def _store_weights(db: Session, user_id: int, sessions: list[dict], counts: dict
             counts["weights"] += 1
 
 
+def _read_list(folder: Path, pattern: str) -> list[dict]:
+    rows = []
+
+    for file in sorted(folder.glob(pattern)):
+        data = json.loads(file.read_text(encoding="utf-8"))
+
+        if isinstance(data, list):
+            rows += data
+
+    return rows
+
+
+def _per_minute(milliseconds) -> float | None:
+    """Beats or breaths a minute, from the average time between two of them."""
+    return 60000 / milliseconds if milliseconds else None
+
+
+def _store_sleep(db: Session, user_id: int, folder: Path, counts: dict) -> None:
+    nights = set()
+
+    for row in _read_list(folder, "sleep_result_*.json"):
+        evaluation = row.get("evaluation", {})
+        phases = evaluation.get("phaseDurations", {})
+        hypnogram = row.get("sleepResult", {}).get("hypnogram", {})
+        nights.add(row["night"])
+
+        store_night(
+            db,
+            user_id,
+            row["night"],
+            {
+                "sleep_start": (hypnogram.get("sleepStart") or "")[:19] or None,
+                "sleep_end": (hypnogram.get("sleepEnd") or "")[:19] or None,
+                "asleep_seconds": parse_duration(evaluation.get("asleepDuration")),
+                "light_seconds": parse_duration(phases.get("light")),
+                "deep_seconds": parse_duration(phases.get("deep")),
+                "rem_seconds": parse_duration(phases.get("rem")),
+                "interruption_seconds": parse_duration(
+                    evaluation.get("interruptions", {}).get("totalDuration")
+                ),
+                "continuity": evaluation.get("analysis", {}).get("continuityIndex"),
+            },
+        )
+        db.flush()
+
+    for row in _read_list(folder, "sleep_score_*.json"):
+        nights.add(row["night"])
+        store_night(
+            db,
+            user_id,
+            row["night"],
+            {"sleep_score": row.get("sleepScoreResult", {}).get("sleepScore")},
+        )
+        db.flush()
+
+    for row in _read_list(folder, "nightly_recovery_6*.json"):
+        nights.add(row["night"])
+        store_night(
+            db,
+            user_id,
+            row["night"],
+            {
+                "hrv_ms": row.get("meanNightlyRecoveryRmssd") or None,
+                "heart_rate": _per_minute(row.get("meanNightlyRecoveryRri")),
+                "breathing_rate": _per_minute(
+                    row.get("meanNightlyRecoveryRespirationInterval")
+                ),
+            },
+        )
+        db.flush()
+
+    counts["nights"] = len(nights)
+
+
 def import_export(db: Session, user_id: int, folder: Path) -> dict:
     """Safe to run again: what is already there is skipped."""
     files = sorted(folder.glob("training-session_*.json"))
@@ -168,7 +244,13 @@ def import_export(db: Session, user_id: int, folder: Path) -> dict:
     sessions = [json.loads(file.read_text(encoding="utf-8")) for file in files]
     sessions.sort(key=lambda session: session["startTime"])
 
-    counts = {"imported": 0, "skipped": 0, "weights": 0, "unknown_sports": set()}
+    counts = {
+        "imported": 0,
+        "skipped": 0,
+        "weights": 0,
+        "nights": 0,
+        "unknown_sports": set(),
+    }
 
     for session in sessions:
         for exercise in session["exercises"]:
@@ -176,6 +258,7 @@ def import_export(db: Session, user_id: int, folder: Path) -> dict:
             db.flush()
 
     _store_weights(db, user_id, sessions, counts)
+    _store_sleep(db, user_id, folder, counts)
 
     # The latest session holds the current values from the user's profile.
     physical = sessions[-1].get("physicalInformation", {})

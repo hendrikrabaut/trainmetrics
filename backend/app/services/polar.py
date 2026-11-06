@@ -21,6 +21,7 @@ from app.models.polar_account import PolarAccount
 from app.models.workout import Workout
 from app.schemas.common import speed_in_meters_per_second
 from app.services.importers import activity_type_for_sport
+from app.services.sleep import store_night
 
 
 TIMEOUT_SECONDS = 30
@@ -162,6 +163,74 @@ def list_exercises(access_token: str) -> list[dict]:
     return exercises
 
 
+def _list_nights(access_token: str, path: str, key: str) -> list[dict]:
+    """Sleep data is a bonus: when Polar has none, the sync still succeeds."""
+    request = urllib.request.Request(
+        f"{_api_url()}{path}",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+    )
+
+    status, body = _request(request)
+
+    if status != 200:
+        return []
+
+    try:
+        rows = json.loads(body).get(key, [])
+    except (ValueError, AttributeError):
+        return []
+
+    return rows if isinstance(rows, list) else []
+
+
+def _sync_nights(db: Session, user_id: int, access_token: str) -> int:
+    nights = set()
+
+    for row in _list_nights(access_token, "/v3/users/sleep", "nights"):
+        light = row.get("light_sleep")
+        deep = row.get("deep_sleep")
+        rem = row.get("rem_sleep")
+        phases = [phase for phase in (light, deep, rem) if phase is not None]
+
+        nights.add(row["date"])
+        store_night(
+            db,
+            user_id,
+            row["date"],
+            {
+                "sleep_start": (row.get("sleep_start_time") or "")[:19] or None,
+                "sleep_end": (row.get("sleep_end_time") or "")[:19] or None,
+                "asleep_seconds": sum(phases) if phases else None,
+                "light_seconds": light,
+                "deep_seconds": deep,
+                "rem_seconds": rem,
+                "interruption_seconds": row.get("total_interruption_duration"),
+                "continuity": row.get("continuity"),
+                "sleep_score": row.get("sleep_score"),
+            },
+        )
+        db.flush()
+
+    for row in _list_nights(access_token, "/v3/users/nightly-recharge", "recharges"):
+        nights.add(row["date"])
+        store_night(
+            db,
+            user_id,
+            row["date"],
+            {
+                "hrv_ms": row.get("heart_rate_variability_avg") or None,
+                "heart_rate": row.get("heart_rate_avg") or None,
+                "breathing_rate": row.get("breathing_rate_avg") or None,
+            },
+        )
+        db.flush()
+
+    return len(nights)
+
+
 def parse_duration(value: str | None) -> int | None:
     """ISO 8601 duration, such as PT1H2M3.5S, in whole seconds."""
     match = re.fullmatch(
@@ -283,6 +352,8 @@ def sync(db: Session, user_id: int) -> dict:
     for exercise in list_exercises(account.access_token):
         counts[_store(db, user_id, exercise)] += 1
         db.flush()
+
+    counts["nights"] = _sync_nights(db, user_id, account.access_token)
 
     account.last_sync_at = datetime.now().isoformat(timespec="seconds")
     db.commit()

@@ -200,3 +200,61 @@ def test_the_latest_heart_rates_are_used_for_effort(client, tmp_path):
 def test_a_folder_without_sessions_is_refused(tmp_path):
     with pytest.raises(ValueError):
         _import(tmp_path)
+
+
+def _write_sleep(folder):
+    (folder / "sleep_result_1-a.json").write_text(json.dumps([{
+        "night": "2026-05-05",
+        "evaluation": {
+            "asleepDuration": "PT6H17M30S",
+            "analysis": {"continuityIndex": 4.3},
+            "interruptions": {"totalDuration": "PT20M30S"},
+            "phaseDurations": {"rem": "PT1H23M", "light": "PT3H33M", "deep": "PT1H21M30S"},
+        },
+        "sleepResult": {"hypnogram": {
+            "sleepStart": "2026-05-05T00:23:26.338+02:00",
+            "sleepEnd": "2026-05-05T07:01:26.338+02:00",
+        }},
+    }]), encoding="utf-8")
+    (folder / "sleep_score_1-b.json").write_text(json.dumps([
+        {"night": "2026-05-05", "sleepScoreResult": {"sleepScore": 72.8}},
+    ]), encoding="utf-8")
+    (folder / "nightly_recovery_1234-c.json").write_text(json.dumps([{
+        "night": "2026-05-05",
+        "meanNightlyRecoveryRri": 1000,
+        "meanNightlyRecoveryRmssd": 79,
+        "meanNightlyRecoveryRespirationInterval": 4000,
+    }]), encoding="utf-8")
+    # Holds raw samples, not one row per night in this form.
+    (folder / "nightly_recovery_blob_1-d.json").write_text(
+        json.dumps([{"hrvData": []}]), encoding="utf-8"
+    )
+
+
+def test_sleep_and_recovery_are_combined_per_night(client, tmp_path):
+    _write(tmp_path, _session("a", "2026-05-17T10:00:00"))
+    _write_sleep(tmp_path)
+
+    assert _import(tmp_path)["nights"] == 1
+
+    night = client.get("/api/analytics/sleep").json()["last_night"]
+
+    assert night["asleep_seconds"] == 22650
+    assert night["light_seconds"] == 12780
+    assert night["deep_seconds"] == 4890
+    assert night["rem_seconds"] == 4980
+    assert night["interruption_seconds"] == 1230
+    assert night["sleep_score"] == 73
+    assert night["hrv_ms"] == 79
+    assert night["heart_rate"] == 60
+    assert night["breathing_rate"] == 15
+    assert night["sleep_start"] == "2026-05-05T00:23:26"
+
+
+def test_importing_sleep_twice_keeps_one_row(client, tmp_path):
+    _write(tmp_path, _session("a", "2026-05-17T10:00:00"))
+    _write_sleep(tmp_path)
+    _import(tmp_path)
+    _import(tmp_path)
+
+    assert len(client.get("/api/analytics/sleep").json()["nights"]) == 1

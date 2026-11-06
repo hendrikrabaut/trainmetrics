@@ -981,3 +981,30 @@ dialog.level-up .coach-glove { width: 46px; height: 46px; }
   .home-grid .card:has(.week-strip) { order: 4; }
   .home-grid .card:has(.quest-list) { order: 5; }
 }
+
+/* ---------- sleep ---------- */
+
+.night-card { display: flex; align-items: center; gap: 14px; }
+
+.sleep-art { display: block; flex: none; width: 58px; height: 58px; }
+
+.recovery-pill {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 10px;
+  font-size: 0.85rem;
+  font-weight: 650;
+  border-radius: 999px;
+}
+
+.recovery-pill.good { color: var(--deep); background: var(--sky); }
+.recovery-pill.ok { color: var(--deep); background: var(--soft); }
+.recovery-pill.low { color: var(--on-dark); background: var(--wine); }
+
+.distance-edit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
+
+.distance-edit label { max-width: 190px; }
+
+@media (max-width: 820px) {
+  .home-grid .night-card { order: 3; }
+}

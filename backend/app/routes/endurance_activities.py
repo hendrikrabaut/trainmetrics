@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.endurance_activity import EnduranceActivity
 from app.models.workout import Workout
+from app.schemas.common import speed_in_meters_per_second
 from app.schemas.endurance_activity import (
     EnduranceActivityCreate,
     EnduranceActivityResponse,
@@ -117,6 +118,15 @@ def update_endurance_activity(
 
     for field, value in update_data.items():
         setattr(activity, field, value)
+
+    # A corrected distance or time changes the speed, unless one was given.
+    if "average_speed" not in update_data and (
+        "distance" in update_data or "duration" in update_data
+    ):
+        activity.average_speed = speed_in_meters_per_second(
+            activity.distance,
+            activity.duration,
+        )
 
     db.commit()
     db.refresh(activity)

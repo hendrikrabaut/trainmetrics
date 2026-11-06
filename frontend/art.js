@@ -16,6 +16,7 @@ const ANIMATED = {
   fire: "fire",
   trophy: "trophy",
   party: "party",
+  sleep: "sleep",
 };
 
 const reducedMotion = () =>
@@ -105,6 +106,7 @@ function art(name) {
   if (name === "flame") return animatedPicture("fire", "flame-art");
   if (name === "trophy") return animatedPicture("trophy", "trophy-art");
   if (name === "party") return animatedPicture("party", "party-art");
+  if (name === "sleep") return animatedPicture("sleep", "sleep-art");
   if (name === "calendar") return picture("calendar", "inline-icon");
   if (name.startsWith("icon_")) return picture(SPORT_IMAGES[name.slice(5)], "sport-icon");
 

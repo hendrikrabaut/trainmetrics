@@ -201,3 +201,28 @@ CREATE TABLE plan_sessions (
 
     FOREIGN KEY (plan_id) REFERENCES training_plans(id) ON DELETE CASCADE
 );
+
+
+-- ============================================
+-- SLEEP AND RECOVERY
+-- ============================================
+
+CREATE TABLE sleep_nights (
+    user_id INTEGER NOT NULL,
+    night TEXT NOT NULL,
+    sleep_start TEXT,
+    sleep_end TEXT,
+    asleep_seconds INTEGER,
+    light_seconds INTEGER,
+    deep_seconds INTEGER,
+    rem_seconds INTEGER,
+    interruption_seconds INTEGER,
+    continuity REAL,
+    sleep_score REAL,
+    hrv_ms REAL,
+    heart_rate REAL,      -- bpm
+    breathing_rate REAL,  -- breaths per minute
+
+    PRIMARY KEY (user_id, night),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

@@ -636,3 +636,85 @@ def test_short_efforts_are_not_a_fastest_pace(client):
 
 def test_breakdown_without_data(client):
     assert client.get("/api/analytics/sports").json()["sports"] == []
+
+
+# Sleep and recovery
+
+
+def _night(db, day, hrv, score=80):
+    from app.models.sleep_night import SleepNight
+
+    db.add(SleepNight(user_id=1, night=day.isoformat(), hrv_ms=hrv, sleep_score=score, asleep_seconds=27000))
+
+
+def _nights(values, last_score=80, last_day=TODAY):
+    from app.database import SessionLocal
+
+    with SessionLocal() as db:
+        count = len(values)
+
+        for index, hrv in enumerate(values):
+            day = last_day - timedelta(days=count - 1 - index)
+            _night(db, day, hrv, last_score if index == count - 1 else 80)
+
+        db.commit()
+
+
+@pytest.mark.parametrize(
+    "last, score, status",
+    [
+        (80, 80, "GOOD"),
+        (120, 80, "GOOD"),
+        (40, 80, "LOW"),
+        (80, 40, "LOW"),
+        (80, 60, "OK"),
+        (78.5, 80, "OK"),
+    ],
+)
+def test_recovery_compares_with_your_own_normal(client, last, score, status):
+    _nights([78, 82] * 7 + [last], last_score=score)
+
+    result = client.get("/api/analytics/sleep").json()
+
+    assert result["recovery"]["status"] == status
+    assert result["recovery"]["baseline_ms"] == 80
+    assert result["recovery"]["baseline_nights"] == 14
+    assert result["is_recent"] is True
+
+
+def test_recovery_needs_enough_nights(client):
+    _nights([80, 80, 80])
+
+    result = client.get("/api/analytics/sleep").json()
+
+    assert result["recovery"] is None
+    assert result["last_night"]["hrv_ms"] == 80
+
+
+def test_old_sleep_data_is_not_called_recent(client):
+    _nights([80] * 8, last_day=TODAY - timedelta(days=10))
+
+    assert client.get("/api/analytics/sleep").json()["is_recent"] is False
+
+
+def test_sleep_without_data(client):
+    result = client.get("/api/analytics/sleep").json()
+
+    assert result["last_night"] is None
+    assert result["nights"] == []
+
+
+# Correcting a distance
+
+
+def test_a_corrected_distance_updates_the_speed(client):
+    workout = _run(client, TODAY - timedelta(days=2), distance=None, duration=1500, sport="SWIMMING")
+
+    response = client.patch(f"/api/workouts/{workout['id']}/endurance", json={"distance": 1000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["distance"] == 1000
+    assert response.json()["average_speed"] == 0.67
+
+    breakdown = client.get("/api/analytics/sports").json()["sports"][0]
+    assert breakdown["distance_meters"] == 1000

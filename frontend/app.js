@@ -259,7 +259,7 @@ function xLabel(root, x, text) {
   root.append(label);
 }
 
-function barChart(title, rows, { x, y, format, columns }) {
+function barChart(title, rows, { x, y, format, columns, tip = (row) => `Week van ${x(row)}` }) {
   const draw = (width, show, hide) => {
     const root = svg("svg", { height: CHART.height, role: "img", "aria-label": title });
     const plotWidth = width - CHART.left - CHART.right;
@@ -302,7 +302,7 @@ function barChart(title, rows, { x, y, format, columns }) {
         "aria-label": `${x(row)}: ${format(value)}`,
       });
 
-      const reveal = () => show(center, scale(value), format(value), `Week van ${x(row)}`);
+      const reveal = () => show(center, scale(value), format(value), tip(row));
 
       hit.addEventListener("pointerenter", reveal);
       hit.addEventListener("focus", reveal);
@@ -476,7 +476,7 @@ function questPanel() {
   );
 }
 
-function coachLine(next, estimate) {
+function coachLine(next, estimate, sleep) {
   const open = game.quests.find((quest) => !quest.completed);
   const form = estimate.fitness?.form;
 
@@ -486,6 +486,10 @@ function coachLine(next, estimate) {
 
   if (!next) {
     return "Zonder plan ben je gewoon wat aan het rondlopen, jong. Kom naar mijn hoek, dan maken we er een.";
+  }
+
+  if (sleep?.is_recent && sleep.recovery?.status === "LOW") {
+    return "Je lijf is nog niet hersteld, dat zie ik aan je nacht. Doe vandaag rustig, of schuif je training op.";
   }
 
   if (form !== undefined && form < -10) {
@@ -562,6 +566,31 @@ function workoutSport(workout) {
   return workout.endurance_activity?.activity_type ?? "STRENGTH";
 }
 
+// For when a device got it wrong, such as GPS while swimming in open water.
+function distanceEditor(workout) {
+  return h("form", {
+    class: "distance-edit",
+    onsubmit: submitter(async (form) => {
+      const km = fields(form).km;
+
+      await api(`/api/workouts/${workout.id}/endurance`, {
+        method: "PATCH",
+        json: { distance: km ? Number(km) * 1000 : null },
+      });
+
+      route();
+    }),
+  },
+    h("label", {}, "Afstand aanpassen (km)", h("input", {
+      name: "km", type: "number", min: 0, step: "0.01", inputmode: "decimal",
+      value: workout.endurance_activity.distance
+        ? String(workout.endurance_activity.distance / 1000)
+        : "",
+    })),
+    h("button", { class: "small", type: "submit" }, "Opslaan")
+  );
+}
+
 function workoutRow(workout, onChange) {
   const activity = workout.endurance_activity;
   const sport = workoutSport(workout);
@@ -608,6 +637,7 @@ function workoutRow(workout, onChange) {
         )
       ),
       workout.notes && h("p", { class: "muted" }, workout.notes),
+      onChange && activity && distanceEditor(workout),
       onChange && h("button", { class: "danger small", type: "button", onclick: remove }, "Verwijderen")
     )
   );
@@ -668,8 +698,8 @@ function whenLabel(date) {
   return dayLabel(date, { weekday: "long", day: "numeric", month: "long" });
 }
 
-function heroPanel(next, estimate) {
-  const coach = coachDialog(coachLine(next, estimate)).element;
+function heroPanel(next, estimate, sleep) {
+  const coach = coachDialog(coachLine(next, estimate, sleep)).element;
 
   if (!next) {
     return h("section", { class: "hero" },
@@ -753,10 +783,11 @@ function weekPanel(plan, workouts) {
 }
 
 async function overview() {
-  const [workouts, plan, estimate] = await Promise.all([
+  const [workouts, plan, estimate, sleep] = await Promise.all([
     api("/api/workouts/?limit=30"),
     api(`/api/plans/active?user_id=${userId}`),
     api(`/api/analytics/estimates?user_id=${userId}`),
+    api(`/api/analytics/sleep?user_id=${userId}`),
   ]);
 
   const fitness = estimate.fitness;
@@ -764,7 +795,7 @@ async function overview() {
   return [
     h("div", { class: "home-grid" },
       h("div", {},
-        heroPanel(nextSession(plan), estimate),
+        heroPanel(nextSession(plan), estimate, sleep),
         weekPanel(plan, workouts),
         h("section", {},
           h("div", { class: "row spread", style: "margin-bottom:8px" },
@@ -778,6 +809,7 @@ async function overview() {
       ),
       h("div", {},
         playerPanel(),
+        sleep.is_recent && nightPanel(sleep),
         fitness && h("div", { class: "tiles", style: "margin:0" },
           tile(formLabel(fitness.form), "vorm"),
           tile(decimal(fitness.fitness, 0), "fitheid"),
@@ -787,6 +819,91 @@ async function overview() {
       )
     ),
   ];
+}
+
+const RECOVERY = {
+  GOOD: { label: "Goed hersteld", tone: "good" },
+  OK: { label: "Redelijk hersteld", tone: "ok" },
+  LOW: { label: "Nog niet hersteld", tone: "low" },
+};
+
+function nightPanel(sleep) {
+  const night = sleep.last_night;
+  const recovery = RECOVERY[sleep.recovery?.status];
+
+  return h("section", { class: "card night-card" },
+    art("sleep"),
+    h("div", {},
+      h("h2", { style: "margin:0" }, "Afgelopen nacht"),
+      h("p", { style: "margin:0" },
+        [
+          night.asleep_seconds ? duration(night.asleep_seconds) : null,
+          night.sleep_score !== null ? `slaapscore ${night.sleep_score}` : null,
+        ].filter(Boolean).join(" · ")),
+      recovery && h("span", { class: `recovery-pill ${recovery.tone}` }, recovery.label)
+    )
+  );
+}
+
+function sleepPanel(sleep) {
+  const averages = sleep.averages;
+  const recovery = sleep.recovery;
+  const phase = (seconds) => (seconds ? duration(seconds) : "–");
+
+  const scoreRows = sleep.nights.filter((night) => night.sleep_score !== null);
+  const hrvRows = sleep.nights.filter((night) => night.hrv_ms);
+  const durationRows = sleep.nights.filter((night) => night.asleep_seconds);
+
+  const dayOf = (night) => dayLabel(night.night);
+
+  return h("section", { class: "card" },
+    h("div", { class: "row spread", style: "margin-bottom:12px" },
+      h("h2", { style: "margin:0" }, "Slaap en herstel"),
+      h("span", { class: "muted" }, `gemiddelde van ${averages.nights} nachten`)
+    ),
+    h("div", { class: "tiles" },
+      averages.asleep_seconds && tile(duration(averages.asleep_seconds), "slaap per nacht"),
+      averages.sleep_score && tile(decimal(averages.sleep_score, 0), "slaapscore"),
+      averages.deep_seconds && tile(phase(averages.deep_seconds), "diepe slaap"),
+      averages.rem_seconds && tile(phase(averages.rem_seconds), "REM-slaap"),
+      averages.hrv_ms && tile(`${decimal(averages.hrv_ms, 0)} ms`, "hartslagvariabiliteit"),
+      averages.heart_rate && tile(`${decimal(averages.heart_rate, 0)} bpm`, "hartslag in je slaap"),
+      averages.breathing_rate && tile(decimal(averages.breathing_rate), "ademhalingen per minuut")
+    ),
+    durationRows.length > 1 && barChart("Slaap per nacht", durationRows, {
+      x: (night) => shortDay(night.night),
+      y: (night) => night.asleep_seconds / 3600,
+      format: (value) => `${decimal(value)} u`,
+      tip: dayOf,
+      columns: [
+        { label: "Nacht", value: dayOf },
+        { label: "Slaap", value: (night) => duration(night.asleep_seconds) },
+        { label: "Diep", value: (night) => phase(night.deep_seconds) },
+        { label: "REM", value: (night) => phase(night.rem_seconds) },
+        { label: "Score", value: (night) => (night.sleep_score ?? "–").toString() },
+      ],
+    }),
+    scoreRows.length > 1 && h("div", { style: "margin-top:16px" }, lineChart("Slaapscore", scoreRows, {
+      x: (night) => night.night,
+      y: (night) => night.sleep_score,
+      format: (value) => decimal(value, 0),
+      columns: [
+        { label: "Nacht", value: dayOf },
+        { label: "Slaapscore", value: (night) => String(night.sleep_score) },
+      ],
+    })),
+    hrvRows.length > 1 && h("div", { style: "margin-top:16px" }, lineChart("Hartslagvariabiliteit in je slaap", hrvRows, {
+      x: (night) => night.night,
+      y: (night) => night.hrv_ms,
+      format: (value) => `${decimal(value, 0)} ms`,
+      columns: [
+        { label: "Nacht", value: dayOf },
+        { label: "Variabiliteit", value: (night) => `${night.hrv_ms} ms` },
+      ],
+    })),
+    recovery && h("p", { class: "muted", style: "margin:12px 0 0" },
+      `Je herstel is een schatting van deze app, niet de Nightly Recharge van Polar: je laatste nacht (${recovery.hrv_ms} ms) tegenover je eigen normaal van ${recovery.baseline_nights} nachten (${recovery.baseline_ms} ms), samen met je slaapscore. Het is geen medisch advies.`)
+  );
 }
 
 function weeklyPanel(weeks) {
@@ -1556,7 +1673,8 @@ function sportPanel() {
 }
 
 async function statisticsView() {
-  const [weeks, estimate, exercises, records, rows, weights] = await Promise.all([
+  const [sleep, weeks, estimate, exercises, records, rows, weights] = await Promise.all([
+    api(`/api/analytics/sleep?user_id=${userId}`),
     api(`/api/analytics/weekly?user_id=${userId}`),
     api(`/api/analytics/estimates?user_id=${userId}`),
     api("/api/exercises/"),
@@ -1625,6 +1743,7 @@ async function statisticsView() {
       h("p", { class: "muted", style: "margin:12px 0 0" },
         `Geschat uit je trainingen: fitheid is je inspanning van de laatste 6 weken, vermoeidheid die van de laatste week, en vorm het verschil. De inspanning komt uit duur en hartslag, met een maximale hartslag van ${estimate.max_heart_rate}.`)
     ),
+    sleep.last_night && sleepPanel(sleep),
     predictionPanel(estimate),
     estimate.running_index?.trend.length > 1 && h("section", { class: "card" },
       lineChart("Running Index", estimate.running_index.trend, {

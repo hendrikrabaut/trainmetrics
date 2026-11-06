@@ -38,10 +38,36 @@ LIFT = {
 }
 
 
+SLEEP = {
+    "date": "2026-10-14",
+    "sleep_start_time": "2026-10-13T23:30:00+02:00",
+    "sleep_end_time": "2026-10-14T07:00:00+02:00",
+    "light_sleep": 14400,
+    "deep_sleep": 5400,
+    "rem_sleep": 5400,
+    "total_interruption_duration": 1200,
+    "continuity": 3.5,
+    "sleep_score": 81,
+}
+
+RECHARGE = {
+    "date": "2026-10-14",
+    "heart_rate_avg": 52,
+    "heart_rate_variability_avg": 78,
+    "breathing_rate_avg": 14.5,
+}
+
+
 @pytest.fixture
 def fake_polar(monkeypatch):
     """A local server that answers like Polar's token and exercise endpoints."""
-    state = {"exercises": [RUN, RIDE, LIFT], "status": 200, "requests": []}
+    state = {
+        "exercises": [RUN, RIDE, LIFT],
+        "nights": [SLEEP],
+        "recharges": [RECHARGE, {"date": "2026-10-13", "heart_rate_avg": 60}],
+        "status": 200,
+        "requests": [],
+    }
 
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, status, body=None):
@@ -63,7 +89,13 @@ def fake_polar(monkeypatch):
 
         def do_GET(self):
             state["requests"].append(("GET", self.path, self.headers, ""))
-            self._reply(state["status"], state["exercises"])
+
+            if self.path == "/v3/users/sleep":
+                self._reply(state["status"], {"nights": state["nights"]})
+            elif self.path == "/v3/users/nightly-recharge":
+                self._reply(state["status"], {"recharges": state["recharges"]})
+            else:
+                self._reply(state["status"], state["exercises"])
 
         def log_message(self, *args):
             pass
@@ -156,10 +188,10 @@ def test_sync_imports_once_and_keeps_the_running_index(client, fake_polar):
     _link(client)
 
     first = client.post("/api/polar/sync").json()
-    assert first == {"imported": 3, "updated": 0, "skipped": 0}
+    assert first == {"imported": 3, "updated": 0, "skipped": 0, "nights": 2}
 
     second = client.post("/api/polar/sync").json()
-    assert second == {"imported": 0, "updated": 0, "skipped": 3}
+    assert second == {"imported": 0, "updated": 0, "skipped": 3, "nights": 2}
 
     workouts = {w["date"]: w for w in client.get("/api/workouts/").json()}
 
@@ -222,3 +254,28 @@ def test_unlink_keeps_the_trainings(client, fake_polar):
     assert client.delete("/api/polar/link").status_code == 200
     assert client.get("/api/polar/status").json()["linked"] is False
     assert len(client.get("/api/workouts/").json()) == 3
+
+
+def test_sync_also_brings_sleep_and_recovery(client, fake_polar):
+    _link(client)
+    client.post("/api/polar/sync")
+
+    night = client.get("/api/analytics/sleep").json()["last_night"]
+
+    assert night["night"] == "2026-10-14"
+    assert night["asleep_seconds"] == 25200
+    assert night["deep_seconds"] == 5400
+    assert night["sleep_score"] == 81
+    assert night["hrv_ms"] == 78
+    assert night["heart_rate"] == 52
+    assert night["breathing_rate"] == 14.5
+    assert night["sleep_start"] == "2026-10-13T23:30:00"
+
+
+def test_sync_survives_missing_sleep_data(client, fake_polar):
+    _link(client)
+    fake_polar["nights"] = []
+    fake_polar["recharges"] = []
+
+    assert client.post("/api/polar/sync").json()["nights"] == 0
+    assert client.get("/api/analytics/sleep").json()["last_night"] is None

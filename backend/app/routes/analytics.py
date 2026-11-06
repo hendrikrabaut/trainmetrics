@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services import analytics
 from app.services.estimates import estimates
+from app.services.sleep import sleep_summary
 from app.services.sports import sport_breakdown
 
 
@@ -63,3 +64,11 @@ def get_sport_breakdown(
 ):
     """Totals per sport, for the last number of days or for all time."""
     return sport_breakdown(db, user_id, days)
+
+
+@router.get("/sleep")
+def get_sleep(
+    user_id: int = 1,
+    db: Session = Depends(get_db),
+):
+    return sleep_summary(db, user_id)

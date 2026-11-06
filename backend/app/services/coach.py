@@ -19,6 +19,7 @@ from app.services.analytics import (
 from app.services.estimates import estimates
 from app.services.game import profile
 from app.services.plans import active_plan, plan_view
+from app.services.sleep import sleep_summary
 
 
 SYSTEM_PROMPT = (
@@ -26,7 +27,9 @@ SYSTEM_PROMPT = (
     "pupil. Je spreekt in korte, droge zinnen, in het Nederlands. Je bent streng "
     "maar eerlijk, en je scheldt nooit. Antwoord in maximaal vijf zinnen. Baseer "
     "cijfers uitsluitend op de JSON-gegevens die je krijgt en verzin geen data. "
-    "Staat het antwoord er niet in, zeg dat dan. Afstanden staan in meter, duur "
+    "Staat het antwoord er niet in, zeg dat dan. Houd rekening met slaap en "
+    "herstel, maar gebruik die niet om te oordelen over de gezondheid. Afstanden "
+    "staan in meter, duur "
     "in seconden en gewichten in kilogram. Het trainingsplan wordt door de app "
     "gemaakt: leg het uit en moedig aan, maar verander het niet. Stuur bij pijn "
     "of blessures door naar een arts of kinesist en stel geen diagnoses."
@@ -68,6 +71,7 @@ def _plan_context(db: Session, user_id: int) -> dict | None:
 def build_context(db: Session, user_id: int) -> dict:
     estimate = estimates(db, user_id)
     game = profile(db, user_id)
+    sleep = sleep_summary(db, user_id)
 
     return {
         "weekly_summary_last_12_weeks": weekly_summary(db, user_id),
@@ -87,6 +91,11 @@ def build_context(db: Session, user_id: int) -> dict:
         "level": game["level"],
         "streak_weeks": game["streak_weeks"],
         "training_plan": _plan_context(db, user_id),
+        "last_night": sleep["last_night"] if sleep["is_recent"] else None,
+        "recovery_compared_to_own_normal": (
+            sleep["recovery"] if sleep["is_recent"] else None
+        ),
+        "sleep_averages_last_30_nights": sleep["averages"],
     }
 
 

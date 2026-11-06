@@ -161,9 +161,12 @@ Goed om te weten:
   [account.polar.com](https://account.polar.com) (Download your data), pak je het
   bestand uit en draai je in `backend/`:
   `uv run python scripts/import_polar_export.py <map>`. Dit neemt ook je Running
-  Index, gewichten en hartslagwaarden mee, en je mag het veilig opnieuw draaien.
+  Index, gewichten, hartslagwaarden, slaap en herstel mee, en je mag het veilig
+  opnieuw draaien.
   Losse trainingen kun je ook als TCX uit Polar Flow halen en uploaden onder
   **Profiel**, maar dan zonder Running Index.
+- Slaap en herstel haalt de API op tot 28 dagen terug. Laat de sync dus regelmatig
+  lopen, anders mis je nachten.
 - Je horloge moet eerst synchroniseren met Polar Flow.
 - De sleutel voor Polar staat in de database, en dus ook in je back-ups. Behandel
   die back-ups als privé.
