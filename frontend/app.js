@@ -189,8 +189,11 @@ function niceMax(value) {
 
   const magnitude = 10 ** Math.floor(Math.log10(value));
 
-  // Even steps only, so the middle gridline is a whole number too.
-  for (const step of [2, 4, 6, 8, 10]) {
+  // Even steps only, so the middle gridline is a whole number too. From ten
+  // upwards, 12 and 16 also stay whole and keep the bars from looking small.
+  const steps = magnitude >= 10 ? [1.2, 1.6, 2, 4, 6, 8, 10] : [2, 4, 6, 8, 10];
+
+  for (const step of steps) {
     if (value <= step * magnitude) return step * magnitude;
   }
 
