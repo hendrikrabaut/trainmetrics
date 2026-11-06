@@ -306,7 +306,11 @@ def _store_sleep(db: Session, user_id: int, folder: Path, counts: dict) -> None:
         )
         db.flush()
 
-    for row in _read_list(folder, "nightly_recovery_6*.json"):
+    for row in _read_list(folder, "nightly_recovery_*.json"):
+        # The archive's blob file holds raw samples, not one row per night.
+        if "night" not in row:
+            continue
+
         nights.add(row["night"])
         store_night(
             db,
