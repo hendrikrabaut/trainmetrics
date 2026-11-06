@@ -36,6 +36,9 @@ SYSTEM_PROMPT = (
 )
 
 
+REACHABLE_SECONDS = 4
+
+
 class CoachUnavailable(Exception):
     """The model could not be reached or gave no usable answer."""
 
@@ -99,22 +102,13 @@ def build_context(db: Session, user_id: int) -> dict:
     }
 
 
-def ask(db: Session, user_id: int, question: str) -> str:
-    url, model, timeout = _settings()
+def _chat(messages: list[dict], response_format=None, timeout: float | None = None) -> str:
+    url, model, default_timeout = _settings()
 
-    context = json.dumps(build_context(db, user_id), ensure_ascii=False)
+    payload = {"model": model, "stream": False, "messages": messages}
 
-    payload = {
-        "model": model,
-        "stream": False,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"Mijn gegevens:\n{context}\n\nVraag: {question}",
-            },
-        ],
-    }
+    if response_format is not None:
+        payload["format"] = response_format
 
     request = urllib.request.Request(
         f"{url}/api/chat",
@@ -123,7 +117,7 @@ def ask(db: Session, user_id: int, question: str) -> str:
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout or default_timeout) as response:
             answer = json.load(response)["message"]["content"]
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise CoachUnavailable(str(error)) from error
@@ -135,3 +129,49 @@ def ask(db: Session, user_id: int, question: str) -> str:
         raise CoachUnavailable("The model returned an empty answer")
 
     return answer
+
+
+def ask(db: Session, user_id: int, question: str) -> str:
+    context = json.dumps(build_context(db, user_id), ensure_ascii=False)
+
+    return _chat(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Mijn gegevens:\n{context}\n\nVraag: {question}",
+            },
+        ]
+    )
+
+
+def _check_reachable() -> None:
+    """A laptop that is off should not keep someone waiting for many minutes."""
+    url, _, _ = _settings()
+
+    try:
+        with urllib.request.urlopen(f"{url}/api/tags", timeout=REACHABLE_SECONDS):
+            pass
+    except urllib.error.HTTPError:
+        return
+    except OSError as error:
+        raise CoachUnavailable(str(error)) from error
+
+
+def ask_json(system: str, content: str, schema: dict):
+    """A structured answer. A plan takes far longer than a question on a laptop."""
+    _check_reachable()
+
+    answer = _chat(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ],
+        response_format=schema,
+        timeout=float(os.environ.get("OLLAMA_PROPOSAL_TIMEOUT", "900")),
+    )
+
+    try:
+        return json.loads(answer)
+    except ValueError as error:
+        raise CoachUnavailable("Het model gaf geen geldige JSON") from error

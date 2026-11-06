@@ -100,3 +100,9 @@ export const RACE_GOALS = {
   TRI_HALF: "1/2 triatlon",
   TRIATHLON: "Triatlon",
 };
+
+export const PLAN_GOALS = {
+  ...RACE_GOALS,
+  STRENGTH: "Kracht",
+  FITNESS: "Algemene conditie",
+};

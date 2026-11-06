@@ -1,35 +1,14 @@
-import { calendarPanel } from "./calendar.js";
+import { proposalTab } from "./proposal.js";
+import { pickedDays, weekdayPicker } from "./weekdays.js";
+import { addSessionForm, calendarPanel } from "./calendar.js";
 import { seasonPanel } from "./season.js";
 import { api } from "../api.js";
 import { art, coachDialog } from "../art.js";
 import { fields, h, message, subTabs, submitter } from "../dom.js";
-import { PHASE_LABELS, RACE_GOALS, SPORTS, dayLabel, duration, kilometers, localNow } from "../format.js";
+import { PHASE_LABELS, PLAN_GOALS, SPORTS, dayLabel, duration, kilometers, localNow } from "../format.js";
 import { xpBar } from "../gamification.js";
 import { route } from "../navigation.js";
 
-const GOALS = {
-  ...RACE_GOALS,
-  STRENGTH: "Kracht",
-  FITNESS: "Algemene conditie",
-};
-
-const WEEKDAY_NAMES = ["ma", "di", "wo", "do", "vr", "za", "zo"];
-
-function weekdayPicker(selected) {
-  return h("fieldset", { class: "day-picker" },
-    h("legend", {}, "Op welke dagen train je? Het aantal dagen bepaalt het aantal trainingen per week."),
-    WEEKDAY_NAMES.map((name, index) => {
-      const input = h("input", { type: "checkbox", name: "day", value: index, "aria-label": name });
-      input.checked = selected.includes(index);
-
-      return h("label", {}, input, h("span", { "aria-hidden": "true" }, name));
-    })
-  );
-}
-
-function pickedDays(form) {
-  return [...form.querySelectorAll("input[name=day]:checked")].map((input) => Number(input.value));
-}
 
 function complianceText(session) {
   const actual = session.actual;
@@ -127,54 +106,6 @@ function sessionRow(session) {
   );
 }
 
-function planForm(hasPlan, races) {
-  const coming = races.filter((race) => race.date > localNow().slice(0, 10));
-
-  return h("form", {
-    onsubmit: submitter(async (form) => {
-      const values = fields(form);
-      const weekdays = pickedDays(form);
-      const race = coming.find((item) => String(item.id) === values.race);
-
-      if (weekdays.length < 2) throw new Error("Kies minstens twee dagen");
-
-      if (hasPlan && !confirm("Je huidige plan vervangen? Wat je al deed, blijft meetellen voor je XP.")) {
-        return;
-      }
-
-      await api("/api/plans/", {
-        json: {
-          goal: race?.goal ?? values.goal,
-          weekdays,
-          weeks: race || values.race_date || !values.weeks ? null : Number(values.weeks),
-          race_date: race?.date ?? (values.race_date || null),
-        },
-      });
-
-      route();
-    }),
-  },
-    h("div", { class: "fields" },
-      h("label", {}, "Doel",
-        h("select", { name: "goal" },
-          Object.entries(GOALS).map(([key, label]) => h("option", { value: key }, label))
-        )
-      ),
-      coming.length > 0 && h("label", {}, "Richt op wedstrijd",
-        h("select", { name: "race" },
-          h("option", { value: "" }, "Geen"),
-          coming.map((race) => h("option", { value: race.id }, `${race.priority}: ${race.name}, ${dayLabel(race.date)}`)))),
-      h("label", {}, "Wedstrijddatum (optioneel)", h("input", { name: "race_date", type: "date" })),
-      h("label", {}, "Of aantal weken", h("input", {
-        name: "weeks", type: "number", min: 2, max: 30, placeholder: "Automatisch", inputmode: "numeric",
-      }))
-    ),
-    weekdayPicker([1, 3, 5, 6]),
-    h("div", {}, h("button", { class: "primary", type: "submit" },
-      hasPlan ? "Nieuw plan maken" : "Maak mijn plan"))
-  );
-}
-
 function schedulePanel(plan) {
   return h("details", { class: "card form-toggle" },
     h("summary", {}, `Trainingsdagen aanpassen (nu ${plan.weekdays.length} per week)`),
@@ -259,15 +190,16 @@ function planPanel(plan) {
 }
 
 export async function coachView() {
-  const [plan, workouts, races] = await Promise.all([
+  const [plan, proposal, workouts, races] = await Promise.all([
     api("/api/plans/active"),
+    api("/api/plans/proposal"),
     api("/api/workouts/?limit=1000"),
     api("/api/races/"),
   ]);
 
   const opening = plan
-    ? plan.warning || `${GOALS[plan.goal]}, hè. Goed. Doe wat er staat, niet wat je zin hebt. En als iets pijn doet, zeg je het.`
-    : "Vertel me wat je wilt bereiken en hoe vaak je kunt komen. Dan zet ik er een plan tegenover. Daar hoeft de laptop niet eens voor aan.";
+    ? plan.warning || `${PLAN_GOALS[plan.goal]}, hè. Goed. Doe wat er staat, niet wat je zin hebt. En als iets pijn doet, zeg je het.`
+    : "Vertel me wat je wilt bereiken en hoe vaak je kunt komen. Ik doe een voorstel, en jij beslist wat er in je planning komt.";
 
   const dialog = coachDialog(opening);
 
@@ -291,11 +223,11 @@ export async function coachView() {
 
   const planTab = [
     plan && planPanel(plan),
-    plan && schedulePanel(plan),
-    h("section", { class: "card" },
-      h("h2", {}, plan ? "Ander doel" : "Nieuw plan"),
-      planForm(Boolean(plan), races)
+    plan && h("details", { class: "card form-toggle" },
+      h("summary", {}, "Extra training toevoegen"),
+      addSessionForm(localNow().slice(0, 10))
     ),
+    plan && schedulePanel(plan),
   ];
 
   const coachTab = [
@@ -332,7 +264,8 @@ export async function coachView() {
     h("h1", {}, "Plan"),
     dialog.element,
     subTabs("plan", [
-      { label: plan ? "Schema" : "Nieuw plan", content: planTab },
+      ...(plan ? [{ label: "Schema", content: planTab }] : []),
+      { label: "Voorstel", content: proposalTab(proposal, races, Boolean(plan)) },
       { label: "Kalender", content: calendarPanel(plan, workouts, races) },
       { label: "Seizoen", content: seasonPanel(plan, races) },
       { label: "Coach", content: coachTab },

@@ -8,7 +8,8 @@ maakt. Plannen kun je zelf aanpassen en als iCal-bestand naar je agenda sturen.
 
 - **Backend:** FastAPI, SQLAlchemy, SQLite, Alembic (`backend/`)
 - **Frontend:** HTML, CSS en JavaScript zonder buildstap (`frontend/`)
-- **Trainingsplannen:** vaste regels in de backend, dus ze werken altijd
+- **Trainingsplannen:** een taalmodel doet een voorstel op basis van je data, vaste
+  regels nemen over als het niet bereikbaar is. Jij past het aan en keurt het goed
 - **Praten met de coach:** Ollama, op een andere computer in je netwerk
 - **Polar:** de AccessLink-API, plus import van FIT-, GPX- en TCX-bestanden
 - **Kaart:** Leaflet met tegels van OpenStreetMap, alleen als je erom vraagt

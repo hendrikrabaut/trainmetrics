@@ -1077,3 +1077,63 @@ dialog.level-up .coach-art { display: none; }
 .phase.RACE { color: var(--deep); background: var(--steel); }
 
 .gear-edit-row td { white-space: normal; }
+
+/* ---------- extra trainings ---------- */
+
+.calendar-day-head { display: flex; align-items: center; justify-content: space-between; }
+
+.calendar-add {
+  width: 22px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--wine);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+}
+
+.calendar-add:hover, .calendar-add:focus-visible { background: var(--soft); border-color: var(--wine); }
+
+.add-session { margin-top: 12px; }
+
+/* ---------- proposal ---------- */
+
+.proposal-week { padding: 8px 0; border-top: 1px solid var(--grid); }
+
+.proposal-row {
+  display: grid;
+  grid-template-columns: 148px 112px minmax(140px, 1fr) 72px 72px minmax(160px, 1.4fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 8px 0;
+}
+
+.proposal-row label { font-size: 0.8rem; min-width: 0; }
+
+.proposal-row input, .proposal-row select { min-height: 38px; padding: 6px 8px; }
+
+.proposal-actions { display: flex; align-items: center; gap: 6px; min-height: 38px; }
+
+.source-tag {
+  padding: 1px 7px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--deep);
+  background: var(--soft);
+  border-radius: 999px;
+}
+
+.proposal-warnings { color: var(--deep); background: #FDE3D8; }
+
+.proposal-warnings ul { margin: 4px 0 0; padding-left: 18px; }
+
+.proposal-decision { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+@media (max-width: 820px) {
+  .proposal-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 12px 0; border-bottom: 1px solid var(--grid); }
+  .proposal-title, .proposal-description { grid-column: 1 / -1; }
+  .proposal-actions { grid-column: 1 / -1; justify-content: space-between; }
+}

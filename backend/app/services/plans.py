@@ -372,7 +372,7 @@ def next_monday(today: date) -> date:
     return today + timedelta(days=7 - today.weekday())
 
 
-def _archive_active(db: Session, user_id: int, today: date) -> None:
+def archive_active(db: Session, user_id: int, today: date) -> None:
     """Keeps past sessions for the XP history and drops the ones still to come."""
     plans = db.scalars(
         select(TrainingPlan).where(
@@ -554,31 +554,29 @@ def _build_sessions(
     return sessions
 
 
-def create_plan(
+def build_draft(
     db: Session,
     user_id: int,
     goal: str,
-    sessions_per_week: int,
-    weeks: int | None = None,
-    start: date | None = None,
-    race_date: date | None = None,
-    today: date | None = None,
-    weekdays: list[int] | None = None,
-) -> TrainingPlan:
-    today = today or date.today()
-    start = start or next_monday(today)
-    start = start - timedelta(days=start.weekday())
+    weekdays: list[int],
+    weeks: int | None,
+    start: date,
+    race_date: date | None,
+    today: date,
+) -> dict:
+    """The sessions the rules come up with. Nothing is saved."""
+    monday = start - timedelta(days=start.weekday())
 
-    if start + timedelta(days=6) < today:
+    if monday + timedelta(days=6) < today:
         raise PlanError("De startdatum ligt in het verleden")
 
-    days = _check_weekdays(goal, weekdays or SLOTS[sessions_per_week])
+    days = _check_weekdays(goal, weekdays)
 
     if race_date is not None:
         if race_date <= start:
             raise PlanError("De wedstrijd moet na de start van het plan liggen")
 
-        weeks = math.ceil(((race_date - start).days + 1) / 7)
+        weeks = math.ceil(((race_date - monday).days + 1) / 7)
 
     weeks = weeks or WEEKS_BY_GOAL[goal]
 
@@ -600,31 +598,58 @@ def create_plan(
                 "beter, dus neem liever meer tijd."
             )
 
+    return {
+        "sessions": _build_sessions(
+            goal,
+            monday,
+            weeks,
+            days,
+            race_date,
+            curve,
+            _paces(workouts),
+            _races_within(db, user_id, monday, weeks, race_date),
+        ),
+        "start": monday,
+        "weeks": weeks,
+        "weekdays": days,
+        "first_long_run": first,
+        "warning": warning,
+    }
+
+
+def create_plan(
+    db: Session,
+    user_id: int,
+    goal: str,
+    sessions_per_week: int,
+    weeks: int | None = None,
+    start: date | None = None,
+    race_date: date | None = None,
+    today: date | None = None,
+    weekdays: list[int] | None = None,
+) -> TrainingPlan:
+    today = today or date.today()
+    start = start or next_monday(today)
+    days = weekdays or SLOTS[sessions_per_week]
+
+    draft = build_draft(db, user_id, goal, days, weeks, start, race_date, today)
+
     plan = TrainingPlan(
         user_id=user_id,
         goal=goal,
-        start_date=start.isoformat(),
+        start_date=draft["start"].isoformat(),
         end_date="",
         race_date=race_date.isoformat() if race_date else None,
-        warning=warning,
-        weekdays=",".join(str(day) for day in days),
-        first_long_run=first,
+        warning=draft["warning"],
+        weekdays=",".join(str(day) for day in draft["weekdays"]),
+        first_long_run=draft["first_long_run"],
     )
 
-    plan.sessions = _build_sessions(
-        goal,
-        start,
-        weeks,
-        days,
-        race_date,
-        curve,
-        _paces(workouts),
-        _races_within(db, user_id, start, weeks, race_date),
-    )
+    plan.sessions = draft["sessions"]
     plan.sessions.sort(key=lambda session: session.date)
     plan.end_date = plan.sessions[-1].date
 
-    _archive_active(db, user_id, today)
+    archive_active(db, user_id, today)
     db.add(plan)
     db.commit()
     db.refresh(plan)
@@ -705,27 +730,72 @@ def reschedule_plan(
     return plan
 
 
+def _week_in_plan(plan: TrainingPlan, day: date, today: date) -> int:
+    """The plan's week number of a day. An earlier day makes the plan start earlier."""
+    start = parse_day(plan.start_date)
+
+    if day < start:
+        if day < today - timedelta(days=today.weekday()):
+            raise PlanError("Die week is al voorbij")
+
+        monday = day - timedelta(days=day.weekday())
+        extra_weeks = (start - monday).days // 7
+
+        for session in plan.sessions:
+            session.week += extra_weeks
+
+        plan.start_date = monday.isoformat()
+        start = monday
+
+    if day > start + timedelta(weeks=30):
+        raise PlanError("Die dag ligt te ver na de start van het plan")
+
+    return (day - start).days // 7 + 1
+
+
+def add_session(
+    db: Session,
+    plan: TrainingPlan,
+    values: dict,
+    today: date | None = None,
+) -> PlanSession:
+    """An extra training, on top of what the plan came up with."""
+    day = values["date"]
+    week = _week_in_plan(plan, day, today or date.today())
+    same_week = [item for item in plan.sessions if item.week == week and item.phase]
+
+    session = PlanSession(
+        date=day.isoformat(),
+        week=week,
+        sport=values["sport"],
+        title=values["title"],
+        description=values.get("description") or "Extra training, door jou toegevoegd.",
+        distance=values.get("distance"),
+        duration=values.get("duration"),
+        phase=same_week[0].phase if same_week else "BASE",
+        is_extra=True,
+    )
+
+    plan.sessions.append(session)
+    db.flush()
+    plan.end_date = max(item.date for item in plan.sessions)
+    db.commit()
+
+    return session
+
+
 def update_session(
     db: Session,
     session: PlanSession,
     changes: dict,
+    today: date | None = None,
 ) -> PlanSession:
     plan = session.plan
 
     if "date" in changes:
         day = changes["date"]
-        start = parse_day(plan.start_date)
-
-        if day < start:
-            raise PlanError("Die dag ligt voor de start van het plan")
-
-        limit = start + timedelta(weeks=30)
-
-        if day > limit:
-            raise PlanError("Die dag ligt te ver na de start van het plan")
-
+        session.week = _week_in_plan(plan, day, today or date.today())
         changes["date"] = day.isoformat()
-        session.week = (day - start).days // 7 + 1
 
     for field, value in changes.items():
         setattr(session, field, value)
@@ -789,8 +859,17 @@ def plan_to_ical(plan: TrainingPlan, now: datetime | None = None) -> str:
         f"X-WR-CALNAME:{_ical_text('TrainMetrics: ' + GOAL_NAMES[plan.goal])}",
     ]
 
+    used_uids = {}
+
     for session in plan.sessions:
         day = parse_day(session.date)
+        uid = f"plan-{plan.id}-{day:%Y%m%d}-{session.sport.lower()}"
+
+        # Two trainings of a sport on a day still need their own identity.
+        used_uids[uid] = used_uids.get(uid, 0) + 1
+
+        if used_uids[uid] > 1:
+            uid = f"{uid}-{used_uids[uid]}"
 
         details = [
             f"{session.distance / 1000:.1f}".replace(".", ",") + " km"
@@ -804,7 +883,7 @@ def plan_to_ical(plan: TrainingPlan, now: datetime | None = None) -> str:
             "BEGIN:VEVENT",
             # Stable for a day and sport, so importing again updates rather
             # than repeats a training that did not move.
-            f"UID:plan-{plan.id}-{day:%Y%m%d}-{session.sport.lower()}@trainmetrics",
+            f"UID:{uid}@trainmetrics",
             f"DTSTAMP:{stamp}",
             f"DTSTART;VALUE=DATE:{day:%Y%m%d}",
             f"DTEND;VALUE=DATE:{day + timedelta(days=1):%Y%m%d}",
@@ -861,15 +940,17 @@ def match_details(sessions, workouts) -> dict[int, tuple]:
     # Workouts on the planned day first, so another session cannot take them.
     for only_same_day in (True, False):
         for session in ordered:
-            if session.id in matched:
+            if session.id in matched or (session.is_extra and not only_same_day):
                 continue
 
             day = parse_day(session.date)
             candidates = available.get((day.isocalendar()[:2], session.sport), [])
+            counts_from = session.plan.counts_from
             options = [
                 workout
                 for workout in candidates
-                if not only_same_day or parse_day(workout.date) == day
+                if (not only_same_day or parse_day(workout.date) == day)
+                and (not counts_from or workout.date[:10] >= counts_from)
             ]
 
             if options:

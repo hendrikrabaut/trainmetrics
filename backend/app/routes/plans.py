@@ -9,7 +9,8 @@ from app.database import get_db
 from app.dependencies import get_user_id
 from app.models.training_plan import PlanSession
 from app.schemas.common import RaceGoal
-from app.services import plans
+from app.models.plan_proposal import PlanProposal
+from app.services import plans, proposals
 
 
 router = APIRouter(
@@ -37,6 +38,49 @@ class SessionUpdate(BaseModel):
     description: str | None = None
     distance: float | None = Field(None, ge=0, description="Meters")
     duration: int | None = Field(None, ge=0, description="Seconds")
+
+
+class SessionCreate(BaseModel):
+    date: Date
+    sport: Literal["RUNNING", "CYCLING", "SWIMMING", "STRENGTH", "OTHER"]
+    title: str = Field(min_length=1, max_length=100)
+    description: str | None = None
+    distance: float | None = Field(None, ge=0, description="Meters")
+    duration: int | None = Field(None, ge=0, description="Seconds")
+
+
+class ProposalCreate(BaseModel):
+    goal: RaceGoal | Literal["STRENGTH", "FITNESS"]
+    weekdays: list[int]
+    weeks: int | None = Field(None, ge=2, le=30)
+    start_date: Date | None = None
+    race_date: Date | None = None
+    notes: str | None = Field(None, max_length=1000)
+    use_model: bool = True
+
+
+class ProposalSession(BaseModel):
+    date: Date
+    sport: Literal["RUNNING", "CYCLING", "SWIMMING", "STRENGTH", "OTHER"]
+    title: str = Field(min_length=1, max_length=100)
+    description: str = ""
+    distance: float | None = Field(None, ge=0)
+    duration: int | None = Field(None, ge=0)
+    phase: str | None = None
+    source: str | None = None
+
+
+class ProposalUpdate(BaseModel):
+    sessions: list[ProposalSession]
+
+
+def _proposal_or_404(db: Session, user_id: int) -> PlanProposal:
+    proposal = db.get(PlanProposal, user_id)
+
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Er is geen voorstel")
+
+    return proposal
 
 
 def _active_or_404(db: Session, user_id: int):
@@ -122,6 +166,22 @@ def export_calendar(
     )
 
 
+@router.post("/sessions")
+def create_session(
+    body: SessionCreate,
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    plan = _active_or_404(db, user_id)
+
+    try:
+        plans.add_session(db, plan, body.model_dump())
+    except plans.PlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    return plans.plan_view(db, plan)
+
+
 @router.patch("/sessions/{session_id}")
 def change_session(
     session_id: int,
@@ -158,6 +218,78 @@ def remove_session(
 
     try:
         plans.delete_session(db, session)
+    except plans.PlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    return plans.plan_view(db, plan)
+
+
+@router.post("/proposal")
+def create_proposal(
+    body: ProposalCreate,
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """Asks for a proposal. Your planning stays as it is."""
+    try:
+        return proposals.create_proposal(
+            db,
+            user_id,
+            body.goal,
+            body.weekdays,
+            weeks=body.weeks,
+            start=body.start_date,
+            race_date=body.race_date,
+            notes=body.notes,
+            use_model=body.use_model,
+        )
+    except plans.PlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.get("/proposal")
+def get_proposal(
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    proposal = db.get(PlanProposal, user_id)
+
+    return proposals.proposal_view(db, proposal) if proposal else None
+
+
+@router.put("/proposal")
+def update_proposal(
+    body: ProposalUpdate,
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    proposal = _proposal_or_404(db, user_id)
+    proposals.update_sessions(db, proposal, [row.model_dump() for row in body.sessions])
+
+    return proposals.proposal_view(db, proposal)
+
+
+@router.delete("/proposal")
+def discard_proposal(
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    db.delete(_proposal_or_404(db, user_id))
+    db.commit()
+
+    return {"message": "Proposal discarded"}
+
+
+@router.post("/proposal/approve")
+def approve_proposal(
+    user_id: int = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """The only way a proposal gets into the planning."""
+    proposal = _proposal_or_404(db, user_id)
+
+    try:
+        plan = proposals.approve(db, proposal)
     except plans.PlanError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

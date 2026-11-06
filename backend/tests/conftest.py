@@ -32,6 +32,7 @@ def seeded_user(schema):
             "segments",
             "races",
             "workout_streams",
+            "plan_proposals",
             "sleep_nights",
             "workout_routes",
             "plan_sessions",

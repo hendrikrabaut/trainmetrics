@@ -111,3 +111,7 @@ export function subTabs(key, tabs) {
 
   return h("div", {}, row, panels);
 }
+
+export function chooseTab(key, label) {
+  chosenTabs.set(key, label);
+}

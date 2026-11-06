@@ -102,6 +102,6 @@ export function seasonPanel(plan, races) {
       h("div", {}, h("button", { class: "primary", type: "submit" }, "Wedstrijd toevoegen"))
     ),
     h("p", { class: "muted", style: "margin:12px 0 0" },
-      "Maak je daarna een nieuw plan, dan richt het zich op je wedstrijd en maakt het de week van een B- of C-wedstrijd lichter.")
+      "Vraag daarna een voorstel, dan richt het zich op je wedstrijd en maakt het de week van een B- of C-wedstrijd lichter.")
   );
 }

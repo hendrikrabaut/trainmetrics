@@ -13,3 +13,4 @@ from app.models.workout_route import WorkoutRoute
 from app.models.workout_stream import WorkoutStream
 from app.models.race import Race
 from app.models.segment import Segment, SegmentEffort
+from app.models.plan_proposal import PlanProposal

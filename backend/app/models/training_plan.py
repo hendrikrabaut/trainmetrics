@@ -1,4 +1,4 @@
-from sqlalchemy import Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,6 +23,9 @@ class TrainingPlan(Base):
     weekdays: Mapped[str | None] = mapped_column(String)
     first_long_run: Mapped[float | None] = mapped_column(Float)
 
+    # A workout from before a plan was approved is not an execution of that plan.
+    counts_from: Mapped[str | None] = mapped_column(String)
+
     sessions: Mapped[list["PlanSession"]] = relationship(
         back_populates="plan",
         cascade="all, delete-orphan",
@@ -46,5 +49,9 @@ class PlanSession(Base):
     distance: Mapped[float | None] = mapped_column(Float)
     duration: Mapped[int | None] = mapped_column(Integer)
     phase: Mapped[str | None] = mapped_column(String)
+
+    # Added on top of the plan. Only a workout on that very day counts for it,
+    # or a run of yesterday would tick off the extra run of today.
+    is_extra: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     plan: Mapped[TrainingPlan] = relationship(back_populates="sessions")

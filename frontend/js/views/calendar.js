@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { art } from "../art.js";
-import { h, message } from "../dom.js";
+import { fields, h, message, number, submitter } from "../dom.js";
 import { SPORTS, dayLabel, duration, isoDay, kilometers, lengthLabel } from "../format.js";
 import { route } from "../navigation.js";
 
@@ -56,13 +56,56 @@ function workoutChip(workout) {
   );
 }
 
+const EXTRA_TITLES = {
+  RUNNING: "Extra loop",
+  CYCLING: "Extra rit",
+  SWIMMING: "Extra zwembeurt",
+  STRENGTH: "Extra krachttraining",
+  OTHER: "Extra training",
+};
+
+// Also the way to add a training on a phone, where dragging does not work.
+export function addSessionForm(initialDate) {
+  return h("form", {
+    class: "add-session",
+    onsubmit: submitter(async (form) => {
+      const values = fields(form);
+
+      await api("/api/plans/sessions", {
+        json: {
+          date: values.date,
+          sport: values.sport,
+          title: values.title || EXTRA_TITLES[values.sport],
+          distance: values.km ? Number(values.km) * 1000 : null,
+          duration: values.minutes ? Math.round(number(values.minutes) * 60) : null,
+        },
+      });
+
+      route();
+    }),
+  },
+    h("div", { class: "fields" },
+      h("label", {}, "Dag", h("input", { name: "date", type: "date", value: initialDate, required: true })),
+      h("label", {}, "Sport",
+        h("select", { name: "sport" },
+          Object.entries(SPORTS).map(([key, label]) => h("option", { value: key }, label)))),
+      h("label", {}, "Naam (optioneel)", h("input", { name: "title", maxlength: 100, placeholder: "Bijvoorbeeld rustige loop" })),
+      h("label", {}, "Afstand (km)", h("input", { name: "km", type: "number", min: 0, step: "0.1", inputmode: "decimal" })),
+      h("label", {}, "Duur (min)", h("input", { name: "minutes", type: "number", min: 0, inputmode: "numeric" }))
+    ),
+    h("div", {}, h("button", { class: "primary small", type: "submit" }, "Training toevoegen"))
+  );
+}
+
 export function calendarPanel(plan, workouts, races) {
   const status = h("div", { "aria-live": "polite" });
+  const adding = h("div", {});
   const grid = h("div", { class: "calendar" });
   const title = h("strong", {});
 
   const render = () => {
     const today = isoDay(new Date());
+    const weekStart = isoDay(mondayOf(0));
     const first = mondayOf(weekOffset);
     const days = Array.from({ length: SHOWN_WEEKS * 7 }, (_, index) => {
       const day = new Date(first);
@@ -102,7 +145,19 @@ export function calendarPanel(plan, workouts, races) {
           }
         },
       },
-        h("span", { class: "calendar-date" }, String(day.getDate())),
+        h("div", { class: "calendar-day-head" },
+          h("span", { class: "calendar-date" }, String(day.getDate())),
+          plan && key >= weekStart && h("button", {
+            class: "calendar-add",
+            type: "button",
+            "aria-label": `Training toevoegen op ${dayLabel(key)}`,
+            title: "Training toevoegen",
+            onclick: () => {
+              adding.replaceChildren(addSessionForm(key));
+              adding.querySelector("select").focus();
+            },
+          }, "+")
+        ),
         dayRaces.map((race) => h("div", { class: "calendar-chip race", title: `${race.name} (${race.priority})` }, h("span", {}, `${race.priority}: ${race.name}`))),
         sessions.map(sessionChip),
         done.map(workoutChip)
@@ -135,7 +190,8 @@ export function calendarPanel(plan, workouts, races) {
     ),
     status,
     h("div", { class: "calendar-scroll" }, grid),
+    adding,
     h("p", { class: "muted", style: "margin:10px 0 0" },
-      "Sleep een training naar een andere dag. Op een telefoon verplaats je ze via Aanpassen onder Schema.")
+      "Sleep een training naar een andere dag, of voeg er een toe met de +. Op een telefoon gebruik je Aanpassen en Extra training onder Schema.")
   );
 }

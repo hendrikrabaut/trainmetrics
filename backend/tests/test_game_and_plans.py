@@ -468,13 +468,144 @@ def test_a_session_can_be_moved_and_resized(client):
     assert changed["duration"] == 2400
 
 
-def test_a_session_cannot_move_before_the_plan(client):
-    plan = _plan(client, goal="10K", weeks=4)
+def _future_plan(client, **body):
+    """A plan that starts next Monday, with today in the week before it."""
+    return _plan(client, goal="10K", weeks=4, weekdays=[1, 3, 6], **body)
+
+
+def test_a_session_can_move_to_before_the_start_of_the_plan(client):
+    plan = _future_plan(client)
     session = plan["sessions"][0]
-    day = date.fromisoformat(plan["start_date"]) - timedelta(days=1)
+
+    response = client.patch(f"/api/plans/sessions/{session['id']}", json={"date": TODAY.isoformat()})
+    assert response.status_code == 200, response.text
+
+    moved = response.json()
+    row = next(s for s in moved["sessions"] if s["id"] == session["id"])
+
+    assert row["date"] == TODAY.isoformat()
+    assert row["week"] == 1
+    assert moved["start_date"] == MONDAY.isoformat()
+
+
+def test_starting_earlier_renumbers_the_other_weeks(client):
+    plan = _future_plan(client)
+    first, second = plan["sessions"][0], plan["sessions"][1]
+    last_week = plan["sessions"][-1]["week"]
+
+    moved = client.patch(f"/api/plans/sessions/{first['id']}", json={"date": TODAY.isoformat()}).json()
+
+    assert next(s for s in moved["sessions"] if s["id"] == second["id"])["week"] == second["week"] + 1
+    assert max(s["week"] for s in moved["sessions"]) == last_week + 1
+    assert moved["weeks"][0]["week"] == 1
+
+
+def test_a_session_cannot_move_to_a_week_long_gone(client):
+    plan = _future_plan(client)
+    session = plan["sessions"][0]
+    day = MONDAY - timedelta(days=1)
 
     response = client.patch(f"/api/plans/sessions/{session['id']}", json={"date": day.isoformat()})
+
     assert response.status_code == 422
+    assert client.get("/api/plans/active").json()["start_date"] == plan["start_date"]
+
+
+def _extra(client, day=TODAY, sport="RUNNING", title="Extra loop", **body):
+    return client.post(
+        "/api/plans/sessions",
+        json={"date": day.isoformat(), "sport": sport, "title": title, **body},
+    )
+
+
+def test_an_extra_session_today_joins_a_plan_that_starts_later(client):
+    plan = _future_plan(client)
+    total = plan["total"]
+
+    response = _extra(client, distance=6000)
+    assert response.status_code == 200, response.text
+
+    updated = response.json()
+    row = next(s for s in updated["sessions"] if s["title"] == "Extra loop")
+
+    assert updated["total"] == total + 1
+    assert updated["start_date"] == MONDAY.isoformat()
+    assert row["week"] == 1
+    assert row["distance"] == 6000
+    assert row["completed"] is False
+    assert row["description"]
+    assert updated["weeks"][0]["planned_meters"] == 6000
+
+
+def test_doing_an_extra_session_completes_it(client):
+    _future_plan(client)
+    _extra(client, distance=6000)
+
+    _run(client, TODAY, distance=6100, duration=2200)
+
+    row = next(
+        s for s in client.get("/api/plans/active").json()["sessions"]
+        if s["title"] == "Extra loop"
+    )
+
+    assert row["completed"] is True
+    assert row["compliance"] == "ON_TARGET"
+    assert row["actual"]["distance"] == 6100
+
+    labels = [event["label"] for event in _profile(client)["recent"]]
+    assert "Plan: Extra loop" in labels
+
+
+def test_extra_sessions_count_for_the_week_and_the_outlook(client):
+    plan = _future_plan(client)
+    day = date.fromisoformat(plan["start_date"]) + timedelta(days=4)
+    before = next(w for w in plan["weeks"] if w["week"] == 1)["planned_meters"]
+
+    updated = _extra(client, day=day, distance=5000).json()
+
+    assert updated["start_date"] == plan["start_date"]
+    assert next(w for w in updated["weeks"] if w["week"] == 1)["planned_meters"] == before + 5000
+
+
+def test_an_extra_session_can_be_moved_and_removed(client):
+    _future_plan(client)
+    row = next(s for s in _extra(client).json()["sessions"] if s["title"] == "Extra loop")
+    tomorrow = TODAY + timedelta(days=1)
+
+    moved = client.patch(f"/api/plans/sessions/{row['id']}", json={"date": tomorrow.isoformat()})
+    assert next(s for s in moved.json()["sessions"] if s["id"] == row["id"])["date"] == tomorrow.isoformat()
+
+    assert client.delete(f"/api/plans/sessions/{row['id']}").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"date": (MONDAY - timedelta(days=1)).isoformat(), "sport": "RUNNING", "title": "Te oud"},
+        {"date": TODAY.isoformat(), "sport": "CHESS", "title": "Schaken"},
+        {"date": TODAY.isoformat(), "sport": "RUNNING", "title": ""},
+        {"date": TODAY.isoformat(), "sport": "RUNNING", "title": "Min", "distance": -1},
+    ],
+)
+def test_impossible_extra_sessions_are_refused(client, body):
+    _future_plan(client)
+
+    assert client.post("/api/plans/sessions", json=body).status_code == 422
+
+
+def test_an_extra_session_needs_a_plan(client):
+    assert _extra(client).status_code == 404
+
+
+def test_two_runs_on_a_day_keep_their_own_calendar_entry(client):
+    _future_plan(client)
+    _extra(client, title="Ochtend")
+    _extra(client, title="Avond")
+
+    text = _unfold(client.get("/api/plans/active/calendar.ics").text)
+    uids = [line for line in text.split("\r\n") if line.startswith("UID:")]
+
+    assert len(uids) == len(set(uids))
 
 
 def test_a_later_end_date_follows_a_moved_session(client):
