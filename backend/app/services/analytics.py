@@ -20,7 +20,7 @@ def estimated_one_rep_max(weight: float, reps: int) -> float:
     return weight * (1 + reps / 30)
 
 
-def _day(value: str) -> date:
+def parse_day(value: str) -> date:
     # Stored dates are ISO strings, with or without a time part.
     return date.fromisoformat(value[:10])
 
@@ -79,14 +79,14 @@ def weekly_summary(
     ).all()
 
     for workout_date, duration in workouts:
-        week = summary.get(_week_start(_day(workout_date)))
+        week = summary.get(_week_start(parse_day(workout_date)))
 
         if week is not None:
             week["workouts"] += 1
             week["duration_seconds"] += duration or 0
 
     for workout_date, _, _, weight, reps in _strength_sets(db, user_id):
-        week = summary.get(_week_start(_day(workout_date)))
+        week = summary.get(_week_start(parse_day(workout_date)))
 
         if week is not None:
             week["strength_volume_kg"] += weight * reps
@@ -102,7 +102,7 @@ def weekly_summary(
     ).all()
 
     for workout_date, activity_type, distance in activities:
-        week = summary.get(_week_start(_day(workout_date)))
+        week = summary.get(_week_start(parse_day(workout_date)))
         key = f"{activity_type.lower()}_meters"
 
         if week is not None and key in week:
@@ -124,7 +124,7 @@ def exercise_progress(db: Session, user_id: int, exercise_id: int) -> list[dict]
         if set_exercise_id != exercise_id:
             continue
 
-        row = days[_day(workout_date)]
+        row = days[parse_day(workout_date)]
         row["top_weight_kg"] = max(row["top_weight_kg"], weight)
         row["volume_kg"] += weight * reps
         row["estimated_1rm_kg"] = max(
@@ -143,7 +143,7 @@ def personal_records(db: Session, user_id: int) -> list[dict]:
     records: dict[int, dict] = {}
 
     for workout_date, exercise_id, name, weight, reps in _strength_sets(db, user_id):
-        day = _day(workout_date).isoformat()
+        day = parse_day(workout_date).isoformat()
         estimate = round(estimated_one_rep_max(weight, reps), 1)
 
         record = records.setdefault(
@@ -180,6 +180,6 @@ def body_weight_history(db: Session, user_id: int) -> list[dict]:
     ).all()
 
     return [
-        {"date": _day(day).isoformat(), "weight_kg": weight}
+        {"date": parse_day(day).isoformat(), "weight_kg": weight}
         for day, weight in measurements
     ]

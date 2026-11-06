@@ -11,6 +11,8 @@ CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
+    max_heart_rate INTEGER,
+    resting_heart_rate INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -87,6 +89,7 @@ CREATE TABLE endurance_activities (
     max_heart_rate INTEGER,     -- bpm
     elevation_gain REAL,        -- meters
     calories INTEGER,
+    running_index INTEGER,      -- from Polar, NULL for other sources
 
     FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
 );
@@ -149,4 +152,52 @@ CREATE TABLE workout_equipment (
     FOREIGN KEY (equipment_id)
         REFERENCES equipment(id)
         ON DELETE CASCADE
+);
+
+-- ============================================
+-- POLAR
+-- ============================================
+
+CREATE TABLE polar_accounts (
+    user_id INTEGER PRIMARY KEY,
+    polar_user_id TEXT,
+    access_token TEXT NOT NULL,
+    last_sync_at TEXT,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+
+-- ============================================
+-- TRAINING PLANS
+-- ============================================
+
+CREATE TABLE training_plans (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    goal TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    race_date TEXT,
+    status TEXT NOT NULL, -- ACTIVE or ARCHIVED
+    warning TEXT,
+    weekdays TEXT,        -- comma separated, 0 is Monday
+    first_long_run REAL,  -- meters
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+
+CREATE TABLE plan_sessions (
+    id INTEGER PRIMARY KEY,
+    plan_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    week INTEGER NOT NULL,
+    sport TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    distance REAL,    -- meters
+    duration INTEGER, -- seconds
+
+    FOREIGN KEY (plan_id) REFERENCES training_plans(id) ON DELETE CASCADE
 );

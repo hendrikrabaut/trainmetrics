@@ -9,7 +9,10 @@ from app import models
 from app.routes.analytics import router as analytics_router
 from app.routes.coach import router as coach_router
 from app.routes.equipment import router as equipment_router
+from app.routes.game import router as game_router
 from app.routes.imports import router as imports_router
+from app.routes.plans import router as plans_router
+from app.routes.polar import router as polar_router
 from app.routes.users import router as users_router
 from app.routes.workouts import router as workouts_router
 from app.routes.exercises import router as exercises_router
@@ -50,6 +53,9 @@ app.include_router(equipment_router)
 app.include_router(analytics_router)
 app.include_router(imports_router)
 app.include_router(coach_router)
+app.include_router(game_router)
+app.include_router(plans_router)
+app.include_router(polar_router)
 
 
 @app.get("/api/health")

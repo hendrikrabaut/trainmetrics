@@ -41,10 +41,18 @@ Die database is al gemigreerd, dus ze werkt meteen.
 
 ## 3. Automatisch starten en dagelijkse back-up
 
+Zet eerst je instellingen klaar. De app start niet zonder dit bestand.
+
+```bash
+cd ~/trainmetrics/backend
+cp ../.env.example .env
+chmod 600 .env
+nano .env   # zet OLLAMA_URL op het IP van de laptop, en de Polar-gegevens uit stap 7
+```
+
 ```bash
 cd ~/trainmetrics
 sudo cp deploy/trainmetrics* /etc/systemd/system/
-sudo nano /etc/systemd/system/trainmetrics.service   # zet OLLAMA_URL op het IP van de laptop
 sudo systemctl daemon-reload
 sudo systemctl enable --now trainmetrics trainmetrics-backup.timer
 ```
@@ -108,6 +116,9 @@ Test vanaf de Pi:
 curl http://<ip-van-de-laptop>:11434/api/tags
 ```
 
+Trainingsplannen werken zonder dit alles. Ollama is alleen nodig om met de coach
+te praten.
+
 Kies het model dat bij de laptop past en zet de naam in `OLLAMA_MODEL`. Hoe groter
 het model, hoe beter de antwoorden, maar ook hoe trager en hoe meer geheugen het
 vraagt. Een antwoord dat te lang duurt, stopt na `OLLAMA_TIMEOUT` seconden
@@ -120,6 +131,42 @@ De app heeft geen login. Iedereen op je netwerk kan je gegevens zien en wijzigen
 - Stel poort 8000 **nooit** open via port forwarding op je router.
 - Wil je er onderweg bij, gebruik dan een VPN zoals
   [Tailscale](https://tailscale.com/), met een gratis abonnement voor persoonlijk gebruik.
+
+## 7. Polar koppelen
+
+Dit is gratis, maar je moet zelf een API-client aanmaken.
+
+1. Log in op <https://admin.polaraccesslink.com> met je Polar Flow-account en maak
+   een client aan.
+2. Vul als redirect-URL het adres van je app in, gevolgd door
+   `/api/polar/callback`. Op de Pi is dat `http://<ip-van-de-pi>:8000/api/polar/callback`,
+   lokaal `http://localhost:8001/api/polar/callback`.
+3. Zet de client-ID en het secret in `backend/.env` en herstart de app.
+4. Ga in de app naar **Profiel** en klik op **Koppel met Polar**.
+
+Weigert Polar het IP-adres van de Pi als redirect-URL? Koppel dan lokaal met het
+localhost-adres en kopieer daarna `database/trainmetrics.db` naar de Pi. De
+koppeling zit in de database.
+
+Trainingen automatisch ophalen, elke 6 uur:
+
+```bash
+sudo systemctl enable --now trainmetrics-polar-sync.timer
+```
+
+Goed om te weten:
+
+- Polar geeft alleen trainingen die de laatste 30 dagen zijn geüpload, en alleen
+  van na het koppelen. Voor je volledige geschiedenis vraag je je gegevens aan op
+  [account.polar.com](https://account.polar.com) (Download your data), pak je het
+  bestand uit en draai je in `backend/`:
+  `uv run python scripts/import_polar_export.py <map>`. Dit neemt ook je Running
+  Index, gewichten en hartslagwaarden mee, en je mag het veilig opnieuw draaien.
+  Losse trainingen kun je ook als TCX uit Polar Flow halen en uploaden onder
+  **Profiel**, maar dan zonder Running Index.
+- Je horloge moet eerst synchroniseren met Polar Flow.
+- De sleutel voor Polar staat in de database, en dus ook in je back-ups. Behandel
+  die back-ups als privé.
 
 ## Updaten
 

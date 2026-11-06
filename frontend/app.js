@@ -4,6 +4,7 @@ const app = document.getElementById("app");
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 let userId = null;
+let game = null;
 
 /* ---------- helpers ---------- */
 
@@ -87,6 +88,8 @@ const decimal = (value, digits = 1) =>
 
 const kilometers = (meters) => `${decimal(meters / 1000)} km`;
 
+const percentage = (part, whole) => `${Math.min(100, (part / whole) * 100)}%`;
+
 function duration(seconds) {
   if (!seconds) return "–";
 
@@ -123,11 +126,23 @@ function pace(activity) {
   return `${decimal(speed * 3.6)} km/u`;
 }
 
+function clock(seconds) {
+  const whole = Math.round(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const rest = String(whole % 60).padStart(2, "0");
+
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}`
+    : `${minutes}:${rest}`;
+}
+
 const SPORTS = {
   RUNNING: "Lopen",
   CYCLING: "Fietsen",
   SWIMMING: "Zwemmen",
   OTHER: "Overig",
+  STRENGTH: "Kracht",
 };
 
 function message(text, isError = false) {
@@ -269,6 +284,7 @@ function barChart(title, rows, { x, y, format, columns }) {
 
         root.append(svg("path", {
           class: "bar",
+          style: `--i:${index}`,
           d: `M${left},${baseline} V${top + radius} Q${left},${top} ${left + radius},${top}`
             + ` H${right - radius} Q${right},${top} ${right},${top + radius} V${baseline} Z`,
         }));
@@ -321,7 +337,8 @@ function lineChart(title, rows, { x, y, format, columns }) {
     const low = Math.min(...values);
     const high = Math.max(...values);
     const padding = Math.max((high - low) * 0.15, Math.abs(high) * 0.02, 1);
-    const yLow = Math.floor(low - padding);
+    // Values that cannot go negative should not get an axis below zero.
+    const yLow = low >= 0 ? Math.max(0, Math.floor(low - padding)) : Math.floor(low - padding);
     const yHigh = Math.ceil(high + padding);
     const yScale = (value) =>
       baseline - ((value - yLow) / (yHigh - yLow)) * (baseline - CHART.top);
@@ -336,6 +353,7 @@ function lineChart(title, rows, { x, y, format, columns }) {
 
     root.append(svg("path", {
       class: "line",
+      pathLength: 1,
       d: points.map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`).join(" "),
     }));
 
@@ -382,7 +400,8 @@ function lineChart(title, rows, { x, y, format, columns }) {
     hit.addEventListener("pointerleave", conceal);
     root.append(hit);
 
-    for (const point of points) {
+    // A daily series would be a wall of dots. Its table holds every value.
+    for (const point of points.length <= 40 ? points : []) {
       const dot = svg("circle", {
         class: "point", cx: point.x, cy: point.y, r: 5, tabindex: 0,
         "aria-label": `${dayLabel(x(point.row))}: ${format(y(point.row))}`,
@@ -401,59 +420,376 @@ function lineChart(title, rows, { x, y, format, columns }) {
   return chartFigure(title, rows, columns, draw);
 }
 
+/* ---------- game layer ---------- */
+
+function xpBar(part, whole, label) {
+  return h("div", {
+    class: "xp-bar",
+    role: "progressbar",
+    "aria-valuemin": 0,
+    "aria-valuemax": whole,
+    "aria-valuenow": part,
+    "aria-label": label,
+  }, h("div", {
+    class: "xp-fill",
+    style: `width:${percentage(part, whole)}`,
+  }));
+}
+
+function playerPanel() {
+  const total = h("span", { class: "level-total" });
+  countUp(total, game.xp, (value) => `${decimal(value, 0)} XP`);
+
+  return h("section", { class: "card level-card" },
+    h("div", { class: "row spread" },
+      h("div", {},
+        h("span", { class: "level-number" }, `Level ${game.level}`),
+        h("span", { class: "level-title" }, game.title)
+      ),
+      total
+    ),
+    xpBar(game.xp_into_level, game.xp_for_next_level, "Voortgang naar het volgende level"),
+    h("div", { class: "row spread" },
+      h("span", { class: "muted" },
+        `Nog ${decimal(game.xp_for_next_level - game.xp_into_level, 0)} XP tot level ${game.level + 1}`),
+      h("span", { class: "muted" },
+        game.streak_weeks > 0 && art("flame"),
+        game.streak_weeks === 1 ? "1 week op rij" : `${game.streak_weeks} weken op rij`)
+    )
+  );
+}
+
+function questPanel() {
+  return h("section", { class: "card" },
+    h("h2", {}, "Quests van deze week"),
+    h("div", { class: "quest-list" }, game.quests.map((quest) =>
+      h("div", { class: `quest${quest.completed ? " done" : ""}` },
+        h("div", { class: "row spread" },
+          h("h3", {}, quest.name),
+          h("span", { class: "xp-gain" }, `+${quest.xp} XP`)
+        ),
+        h("p", { class: "muted", style: "margin:0 0 4px" },
+          `${quest.description} (${quest.progress} van ${quest.target})`),
+        xpBar(quest.progress, quest.target, quest.name)
+      )
+    ))
+  );
+}
+
+function coachLine(next, estimate) {
+  const open = game.quests.find((quest) => !quest.completed);
+  const form = estimate.fitness?.form;
+
+  if (game.xp === 0) {
+    return "Dus jij wilt trainen. Dat zeggen ze allemaal. Laat maar zien: één training, dan praten we verder.";
+  }
+
+  if (!next) {
+    return "Zonder plan ben je gewoon wat aan het rondlopen, jong. Kom naar mijn hoek, dan maken we er een.";
+  }
+
+  if (form !== undefined && form < -10) {
+    return "Je zit diep. Rustig trainen is ook trainen, dus laat je ego thuis.";
+  }
+
+  if (form !== undefined && form > 5) {
+    return "Je bent fris. Dan heb je ook geen excuus, hè.";
+  }
+
+  if (open) return `Doe wat er staat, niet onderhandelen. En die quest "${open.name}" staat er nog.`;
+
+  return "Alle quests binnen deze week. Niet slecht. Niet naast je schoenen gaan lopen.";
+}
+
+function showLevelUp(level, title) {
+  const close = () => dialog.close();
+
+  confetti();
+
+  const dialog = h("dialog", { class: "level-up", onclose: () => dialog.remove() },
+    art("party"),
+    art("coach"),
+    h("h2", {}, `Level ${level}!`),
+    h("p", {}, `Je bent nu: ${title}. Niet naast je schoenen gaan lopen.`),
+    h("button", { class: "primary", type: "button", onclick: close }, "Terug aan het werk")
+  );
+
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+function showToast(text) {
+  const toast = h("div", { class: "toast" }, text);
+  document.getElementById("toasts").append(toast);
+  setTimeout(() => toast.remove(), 2800);
+}
+
+function showXpToast(amount) {
+  showToast(`+${amount} XP`);
+}
+
+// Loads the score and celebrates anything gained since the last look.
+async function refreshGame() {
+  const previous = game;
+
+  game = await api(`/api/game/profile?user_id=${userId}`);
+
+  const chip = document.getElementById("level-chip");
+  chip.textContent = `Lv ${game.level}`;
+  chip.hidden = false;
+
+  if (!previous) return;
+
+  if (game.xp > previous.xp) showXpToast(game.xp - previous.xp);
+
+  const had = new Set(previous.badges.filter((badge) => badge.earned_on).map((badge) => badge.id));
+  const newBadges = game.badges.filter((badge) => badge.earned_on && !had.has(badge.id));
+
+  if (newBadges.length > 3) showToast(`${newBadges.length} nieuwe badges!`);
+  else for (const badge of newBadges) showToast(`Nieuwe badge: ${badge.name}`);
+
+  if (game.level > previous.level) showLevelUp(game.level, game.title);
+  else if (newBadges.length) confetti(45);
+}
+
+function medal(earned) {
+  return picture("medal", `medal${earned ? " earned" : ""}`);
+}
+
 /* ---------- shared pieces ---------- */
 
-function workoutCard(workout, onChange) {
-  const activity = workout.endurance_activity;
+function workoutSport(workout) {
+  return workout.endurance_activity?.activity_type ?? "STRENGTH";
+}
 
-  const heading = activity
-    ? SPORTS[activity.activity_type]
-    : workout.type === "STRENGTH" ? "Krachttraining" : "Duurtraining";
+function workoutRow(workout, onChange) {
+  const activity = workout.endurance_activity;
+  const sport = workoutSport(workout);
 
   const facts = [
+    dayLabel(workout.date, { weekday: "short", day: "numeric", month: "short" }),
     activity?.distance ? kilometers(activity.distance) : null,
     duration(activity?.duration || workout.duration),
     activity ? pace(activity) : null,
-    activity?.average_heart_rate ? `${activity.average_heart_rate} bpm gem.` : null,
-    activity?.elevation_gain ? `${decimal(activity.elevation_gain, 0)} hm` : null,
   ].filter((fact) => fact && fact !== "–");
 
+  const details = [
+    activity?.average_heart_rate ? `${activity.average_heart_rate} bpm gemiddeld` : null,
+    activity?.max_heart_rate ? `${activity.max_heart_rate} bpm maximaal` : null,
+    activity?.elevation_gain ? `${decimal(activity.elevation_gain, 0)} hoogtemeters` : null,
+    activity?.calories ? `${decimal(activity.calories, 0)} kcal` : null,
+    activity?.running_index ? `Running Index ${activity.running_index}` : null,
+  ].filter(Boolean);
+
   const remove = async () => {
-    if (!confirm(`${heading} van ${dayLabel(workout.date)} verwijderen?`)) return;
+    if (!confirm(`${SPORTS[sport]} van ${dayLabel(workout.date)} verwijderen? De XP ervan gaat ook weg.`)) return;
 
     await api(`/api/workouts/${workout.id}`, { method: "DELETE" });
     onChange();
   };
 
-  return h("article", { class: "card workout" },
-    h("div", { class: "row spread" },
-      h("div", {},
-        h("h2", {}, heading),
-        h("span", { class: "muted" }, dayLabel(workout.date))
+  const xp = game?.workout_xp[workout.id];
+
+  return h("details", { class: "workout-row" },
+    h("summary", {},
+      h("span", { class: `sport-mark ${sport}`, "aria-hidden": "true" }, art(`icon_${sport}`)),
+      h("span", {},
+        h("span", { class: "workout-title" }, SPORTS[sport]),
+        h("span", { class: "workout-facts" }, facts.join(" · "))
       ),
+      xp && h("span", { class: "xp-gain" }, `+${xp} XP`)
+    ),
+    h("div", { class: "workout-body" },
+      details.length > 0 && h("p", {}, details.join(" · ")),
+      workout.exercises.length > 0 && h("ul", {},
+        workout.exercises.map((item) =>
+          h("li", {}, `${item.exercise.name}: `,
+            item.sets.map((set) => `${set.weight ?? "–"} kg × ${set.reps ?? "–"}`).join(", "))
+        )
+      ),
+      workout.notes && h("p", { class: "muted" }, workout.notes),
       onChange && h("button", { class: "danger small", type: "button", onclick: remove }, "Verwijderen")
-    ),
-    facts.length > 0 && h("p", { style: "margin:8px 0 0" }, facts.join(" · ")),
-    workout.exercises.length > 0 && h("ul", {},
-      workout.exercises.map((item) =>
-        h("li", {}, `${item.exercise.name}: `,
-          item.sets.map((set) => `${set.weight ?? "–"} kg × ${set.reps ?? "–"}`).join(", "))
-      )
-    ),
-    workout.notes && h("p", { class: "muted", style: "margin:8px 0 0" }, workout.notes)
+    )
   );
 }
 
-/* ---------- views ---------- */
+function weightChart(weights) {
+  const format = (value) => `${decimal(value)} kg`;
+
+  return lineChart("Lichaamsgewicht", weights, {
+    x: (row) => row.date,
+    y: (row) => row.weight_kg,
+    format,
+    columns: [
+      { label: "Datum", value: (row) => dayLabel(row.date) },
+      { label: "Gewicht", value: (row) => format(row.weight_kg) },
+    ],
+  });
+}
+
+function tile(value, label) {
+  return h("div", { class: "tile" }, h("strong", {}, value), h("span", {}, label));
+}
+
+/* ---------- today ---------- */
+
+function isoDay(date) {
+  const local = new Date(date);
+  local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+  return local.toISOString().slice(0, 10);
+}
+
+function weekDays() {
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + index);
+    return day;
+  });
+}
+
+function nextSession(plan) {
+  const today = localNow().slice(0, 10);
+
+  return plan?.sessions.find((session) => !session.completed && session.date >= today) ?? null;
+}
+
+function whenLabel(date) {
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  if (date === isoDay(today)) return "Vandaag";
+  if (date === isoDay(tomorrow)) return "Morgen";
+
+  return dayLabel(date, { weekday: "long", day: "numeric", month: "long" });
+}
+
+function heroPanel(next, estimate) {
+  const coach = coachDialog(coachLine(next, estimate)).element;
+
+  if (!next) {
+    return h("section", { class: "hero" },
+      h("div", { class: "hero-top" },
+        h("div", {},
+          h("span", { class: "eyebrow" }, "Volgende training"),
+          h("h2", {}, "Nog niets gepland"),
+          h("p", { class: "description" }, "Kies een doel en je dagen, en je krijgt een schema op maat van wat je nu aankunt."),
+          h("a", { class: "button primary", href: "#plan" }, "Maak een plan")
+        ),
+        art("RUNNING")
+      ),
+      coach
+    );
+  }
+
+  const facts = [
+    SPORTS[next.sport],
+    next.distance ? kilometers(next.distance) : null,
+    next.duration ? duration(next.duration) : null,
+  ].filter(Boolean);
+
+  return h("section", { class: "hero" },
+    h("div", { class: "hero-top" },
+      h("div", {},
+        h("span", { class: "eyebrow" }, `Volgende training · ${whenLabel(next.date)}`),
+        h("h2", {}, next.title),
+        h("p", { class: "facts" }, facts.join(" · ")),
+        h("p", { class: "description" }, next.description),
+        h("a", { class: "button primary", href: "#plan" }, "Bekijk je plan")
+      ),
+      art(next.sport)
+    ),
+    coach
+  );
+}
+
+function weekPanel(plan, workouts) {
+  const today = isoDay(new Date());
+  const sessions = plan?.sessions ?? [];
+  const days = weekDays();
+  const inWeek = new Set(days.map(isoDay));
+
+  const trained = workouts.filter((workout) => inWeek.has(workout.date.slice(0, 10)));
+  const planned = sessions.filter((session) => inWeek.has(session.date));
+
+  return h("section", { class: "card" },
+    h("div", { class: "row spread" },
+      h("h2", { style: "margin:0" }, "Deze week"),
+      h("span", { class: "muted" }, planned.length
+        ? `${planned.filter((session) => session.completed).length} van ${planned.length} gepland gedaan`
+        : `${trained.length} ${trained.length === 1 ? "training" : "trainingen"}`)
+    ),
+    h("div", { class: "week-strip", style: "margin-top:12px" }, days.map((day) => {
+      const key = isoDay(day);
+      const done = trained.filter((workout) => workout.date.slice(0, 10) === key);
+      const todo = planned.filter((session) => session.date === key && !session.completed);
+
+      const label = [
+        dayLabel(key, { weekday: "long", day: "numeric", month: "long" }),
+        ...done.map((workout) => `gedaan: ${SPORTS[workoutSport(workout)]}`),
+        ...todo.map((session) => `gepland: ${session.title}`),
+      ].join(", ");
+
+      return h("div", {
+        class: `week-day${key === today ? " today" : ""}`,
+        role: "img",
+        "aria-label": label,
+        title: label,
+      },
+        dayLabel(key, { weekday: "short" }).replace(".", ""),
+        h("b", {}, String(day.getDate())),
+        h("div", { class: `week-mark${done.length ? " done" : todo.length ? " planned" : ""}` }, done.length ? "✓" : "")
+      );
+    })),
+    h("div", { class: "week-legend muted" },
+      h("span", {}, "✓ getraind"),
+      h("span", {}, "○ gepland")
+    )
+  );
+}
 
 async function overview() {
-  const [weeks, workouts, weights] = await Promise.all([
-    api(`/api/analytics/weekly?user_id=${userId}`),
-    api("/api/workouts/?limit=5"),
-    api(`/api/analytics/body-weight?user_id=${userId}`),
+  const [workouts, plan, estimate] = await Promise.all([
+    api("/api/workouts/?limit=30"),
+    api(`/api/plans/active?user_id=${userId}`),
+    api(`/api/analytics/estimates?user_id=${userId}`),
   ]);
 
-  const week = weeks.at(-1);
+  const fitness = estimate.fitness;
+
+  return [
+    h("div", { class: "home-grid" },
+      h("div", {},
+        heroPanel(nextSession(plan), estimate),
+        weekPanel(plan, workouts),
+        h("section", {},
+          h("div", { class: "row spread", style: "margin-bottom:8px" },
+            h("h2", { style: "margin:0" }, "Laatste trainingen"),
+            h("a", { href: "#trainingen" }, "Alles bekijken")
+          ),
+          workouts.length
+            ? h("div", { class: "workout-list" }, workouts.slice(0, 4).map((workout) => workoutRow(workout)))
+            : h("p", { class: "muted" }, "Nog geen trainingen. Voeg er een toe of haal ze op via Profiel.")
+        )
+      ),
+      h("div", {},
+        playerPanel(),
+        fitness && h("div", { class: "tiles", style: "margin:0" },
+          tile(formLabel(fitness.form), "vorm"),
+          tile(decimal(fitness.fitness, 0), "fitheid"),
+          estimate.running_index && tile(decimal(estimate.running_index.average, 0), "Running Index")
+        ),
+        questPanel()
+      )
+    ),
+  ];
+}
+
+function weeklyPanel(weeks) {
   const meters = (row) => row.running_meters + row.cycling_meters + row.swimming_meters;
 
   const metrics = {
@@ -504,42 +840,12 @@ async function overview() {
     }, metric.label));
   }
 
-  select("workouts");
+  select("distance");
 
-  return [
-    h("h1", {}, "Deze week"),
-    h("div", { class: "tiles" },
-      tile(decimal(week.workouts, 0), "trainingen"),
-      tile(duration(week.duration_seconds), "trainingstijd"),
-      tile(kilometers(meters(week)), "afstand"),
-      tile(`${decimal(week.strength_volume_kg, 0)} kg`, "krachtvolume")
-    ),
-    h("section", { class: "card" }, buttons, slot),
-    weights.length > 0 && h("section", { class: "card" }, weightChart(weights)),
-    h("h2", {}, "Laatste trainingen"),
-    workouts.length
-      ? workouts.map((workout) => workoutCard(workout))
-      : h("p", { class: "muted" }, "Nog geen trainingen. Voeg er een toe of importeer een bestand."),
-  ];
+  return h("section", { class: "card" }, buttons, slot);
 }
 
-function tile(value, label) {
-  return h("div", { class: "tile" }, h("strong", {}, value), h("span", {}, label));
-}
-
-function weightChart(weights) {
-  const format = (value) => `${decimal(value)} kg`;
-
-  return lineChart("Lichaamsgewicht", weights, {
-    x: (row) => row.date,
-    y: (row) => row.weight_kg,
-    format,
-    columns: [
-      { label: "Datum", value: (row) => dayLabel(row.date) },
-      { label: "Gewicht", value: (row) => format(row.weight_kg) },
-    ],
-  });
-}
+/* ---------- trainings ---------- */
 
 function setRow(onRemove) {
   const row = h("div", { class: "set-row" },
@@ -604,7 +910,7 @@ function exerciseBlock(exercises) {
 
 function strengthForm(exercises, onSaved) {
   if (!exercises.length) {
-    return h("p", {}, "Voeg eerst oefeningen toe onder ", h("a", { href: "#beheer" }, "Beheer"), ".");
+    return h("p", {}, "Voeg eerst oefeningen toe onder ", h("a", { href: "#profiel" }, "Profiel"), ".");
   }
 
   const blocks = h("div", { style: "display:grid;gap:12px" }, exerciseBlock(exercises));
@@ -652,6 +958,8 @@ function strengthForm(exercises, onSaved) {
 }
 
 function enduranceForm(onSaved) {
+  const sports = Object.entries(SPORTS).filter(([key]) => key !== "STRENGTH");
+
   return h("form", {
     onsubmit: submitter(async (form) => {
       const values = fields(form);
@@ -682,7 +990,7 @@ function enduranceForm(onSaved) {
     h("div", { class: "fields" },
       h("label", {}, "Sport",
         h("select", { name: "sport" },
-          Object.entries(SPORTS).map(([key, label]) => h("option", { value: key }, label))
+          sports.map(([key, label]) => h("option", { value: key }, label))
         )
       ),
       h("label", {}, "Datum", h("input", { name: "date", type: "datetime-local", value: localNow(), required: true })),
@@ -700,9 +1008,46 @@ function enduranceForm(onSaved) {
 
 async function trainings() {
   const [workouts, exercises] = await Promise.all([
-    api("/api/workouts/"),
+    api("/api/workouts/?limit=1000"),
     api("/api/exercises/"),
   ]);
+
+  const list = h("div", {});
+  const filters = h("div", { class: "row", style: "margin-bottom:4px" });
+
+  const show = (sport) => {
+    filters.querySelectorAll("button").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.sport === sport));
+    });
+
+    const shown = workouts.filter((workout) => sport === "ALL" || workoutSport(workout) === sport);
+    const months = new Map();
+
+    for (const workout of shown) {
+      const month = dayLabel(workout.date, { month: "long", year: "numeric" });
+      if (!months.has(month)) months.set(month, []);
+      months.get(month).push(workout);
+    }
+
+    list.replaceChildren(...(shown.length
+      ? [...months.entries()].flatMap(([month, rows]) => [
+        h("h2", { class: "month" }, month),
+        h("div", { class: "workout-list" }, rows.map((workout) => workoutRow(workout, route))),
+      ])
+      : [h("p", { class: "muted", style: "margin-top:16px" }, "Geen trainingen gevonden.")]));
+  };
+
+  // Only sports that actually occur, so no filter leads to an empty page.
+  const present = new Set(workouts.map(workoutSport));
+  const options = [["ALL", "Alles"], ...Object.entries(SPORTS).filter(([key]) => present.has(key))];
+
+  for (const [key, label] of options) {
+    filters.append(h("button", {
+      class: "small", type: "button", "data-sport": key, onclick: () => show(key),
+    }, label));
+  }
+
+  show("ALL");
 
   return [
     h("h1", {}, "Trainingen"),
@@ -714,76 +1059,520 @@ async function trainings() {
       h("summary", {}, "Duurtraining toevoegen"),
       enduranceForm(route)
     ),
-    workouts.length
-      ? workouts.map((workout) => workoutCard(workout, route))
-      : h("p", { class: "muted" }, "Nog geen trainingen."),
+    workouts.length > 0 && filters,
+    list,
   ];
 }
 
-function importView() {
-  const results = h("div", { "aria-live": "polite" });
+/* ---------- coach and plan ---------- */
+
+const GOALS = {
+  "5K": "5 km",
+  "10K": "10 km",
+  HALF: "Halve marathon",
+  TRIATHLON: "Triatlon",
+  STRENGTH: "Kracht",
+  FITNESS: "Algemene conditie",
+};
+
+const WEEKDAY_NAMES = ["ma", "di", "wo", "do", "vr", "za", "zo"];
+
+function weekdayPicker(selected) {
+  return h("fieldset", { class: "day-picker" },
+    h("legend", {}, "Op welke dagen train je? Het aantal dagen bepaalt het aantal trainingen per week."),
+    WEEKDAY_NAMES.map((name, index) => {
+      const input = h("input", { type: "checkbox", name: "day", value: index, "aria-label": name });
+      input.checked = selected.includes(index);
+
+      return h("label", {}, input, h("span", { "aria-hidden": "true" }, name));
+    })
+  );
+}
+
+function pickedDays(form) {
+  return [...form.querySelectorAll("input[name=day]:checked")].map((input) => Number(input.value));
+}
+
+function sessionRow(session) {
+  const state = session.completed ? "completed" : session.missed ? "missed" : "";
+
+  const details = [
+    session.distance ? kilometers(session.distance) : null,
+    session.duration ? duration(session.duration) : null,
+  ].filter(Boolean);
+
+  const editor = h("form", {
+    class: "session-edit",
+    hidden: true,
+    onsubmit: submitter(async (form) => {
+      const values = fields(form);
+
+      await api(`/api/plans/sessions/${session.id}`, {
+        method: "PATCH",
+        json: {
+          date: values.date,
+          distance: values.km ? Number(values.km) * 1000 : null,
+          duration: values.minutes ? Math.round(values.minutes * 60) : null,
+        },
+      });
+
+      route();
+    }),
+  },
+    h("div", { class: "fields" },
+      h("label", {}, "Dag", h("input", { name: "date", type: "date", value: session.date, required: true })),
+      h("label", {}, "Afstand (km)", h("input", {
+        name: "km", type: "number", min: 0, step: "0.1", inputmode: "decimal",
+        value: session.distance ? String(session.distance / 1000) : "",
+      })),
+      h("label", {}, "Duur (min)", h("input", {
+        name: "minutes", type: "number", min: 0, inputmode: "numeric",
+        value: session.duration ? String(Math.round(session.duration / 60)) : "",
+      }))
+    ),
+    h("div", { class: "row" },
+      h("button", { class: "primary small", type: "submit" }, "Opslaan"),
+      h("button", {
+        class: "danger small",
+        type: "button",
+        onclick: async () => {
+          if (!confirm(`${session.title} verwijderen uit je plan?`)) return;
+
+          try {
+            await api(`/api/plans/sessions/${session.id}`, { method: "DELETE" });
+            route();
+          } catch (error) {
+            editor.prepend(message(error.message, true));
+          }
+        },
+      }, "Uit plan halen")
+    )
+  );
+
+  return h("div", { class: `session ${state}` },
+    h("div", {
+      class: "check",
+      role: "img",
+      "aria-label": session.completed ? "Gedaan" : session.missed ? "Gemist" : "Nog te doen",
+    }, session.completed ? "✓" : session.missed ? "×" : ""),
+    h("div", {},
+      h("strong", {}, session.title),
+      h("span", { class: "muted" },
+        ` · ${dayLabel(session.date, { weekday: "short", day: "numeric", month: "short" })}`,
+        ` · ${SPORTS[session.sport]}`,
+        details.length ? ` · ${details.join(" · ")}` : "")
+    ),
+    h("p", {}, session.description),
+    h("div", { class: "session-actions" },
+      h("button", {
+        class: "link-button",
+        type: "button",
+        onclick: () => { editor.hidden = !editor.hidden; },
+      }, "Aanpassen")
+    ),
+    editor
+  );
+}
+
+function planForm(hasPlan) {
+  return h("form", {
+    onsubmit: submitter(async (form) => {
+      const values = fields(form);
+      const weekdays = pickedDays(form);
+
+      if (weekdays.length < 2) throw new Error("Kies minstens twee dagen");
+
+      if (hasPlan && !confirm("Je huidige plan vervangen? Wat je al deed, blijft meetellen voor je XP.")) {
+        return;
+      }
+
+      await api("/api/plans/", {
+        json: {
+          user_id: userId,
+          goal: values.goal,
+          weekdays,
+          weeks: values.race_date || !values.weeks ? null : Number(values.weeks),
+          race_date: values.race_date || null,
+        },
+      });
+
+      route();
+    }),
+  },
+    h("div", { class: "fields" },
+      h("label", {}, "Doel",
+        h("select", { name: "goal" },
+          Object.entries(GOALS).map(([key, label]) => h("option", { value: key }, label))
+        )
+      ),
+      h("label", {}, "Wedstrijddatum (optioneel)", h("input", { name: "race_date", type: "date" })),
+      h("label", {}, "Of aantal weken", h("input", {
+        name: "weeks", type: "number", min: 2, max: 30, placeholder: "Automatisch", inputmode: "numeric",
+      }))
+    ),
+    weekdayPicker([1, 3, 5, 6]),
+    h("div", {}, h("button", { class: "primary", type: "submit" },
+      hasPlan ? "Nieuw plan maken" : "Maak mijn plan"))
+  );
+}
+
+function schedulePanel(plan) {
+  return h("details", { class: "card form-toggle" },
+    h("summary", {}, `Trainingsdagen aanpassen (nu ${plan.weekdays.length} per week)`),
+    h("form", {
+      onsubmit: submitter(async (form) => {
+        const weekdays = pickedDays(form);
+
+        if (weekdays.length < 2) throw new Error("Kies minstens twee dagen");
+
+        if (!confirm("Je plan vanaf vandaag herschikken? Eigen aanpassingen aan komende trainingen gaan dan verloren.")) {
+          return;
+        }
+
+        await api("/api/plans/active/schedule", {
+          method: "PUT",
+          json: { user_id: userId, weekdays },
+        });
+
+        route();
+      }),
+    },
+      weekdayPicker(plan.weekdays),
+      h("p", { class: "muted", style: "margin:0" },
+        "Wat al voorbij is, blijft staan. Alles vanaf vandaag wordt opnieuw ingepland, met de belangrijkste trainingen op je laatste dagen van de week."),
+      h("div", {}, h("button", { class: "primary", type: "submit" }, "Plan herschikken"))
+    )
+  );
+}
+
+function planPanel(plan) {
+  const weeks = new Map();
+
+  for (const session of plan.sessions) {
+    if (!weeks.has(session.week)) weeks.set(session.week, []);
+    weeks.get(session.week).push(session);
+  }
+
+  const today = localNow().slice(0, 10);
+
+  // The week holding the next open session is the one that matters now.
+  const nextOpen = plan.sessions.find((session) => !session.completed && session.date >= today)
+    ?? plan.sessions.find((session) => !session.completed);
+  const currentWeek = nextOpen?.week;
+
+  return h("section", { class: "card" },
+    h("div", { class: "row spread" },
+      h("h2", { style: "margin:0" }, `Plan: ${plan.goal_name}`),
+      h("span", { class: "muted" }, `${plan.completed} van ${plan.total} gedaan`)
+    ),
+    h("p", { class: "muted" },
+      `${dayLabel(plan.start_date)} tot ${dayLabel(plan.end_date)}. Een training telt mee als je die sport in dezelfde week doet.`),
+    xpBar(plan.completed, plan.total, "Voortgang van het plan"),
+    plan.warning && h("div", { class: "message", style: "margin-top:12px" }, plan.warning),
+    h("div", { class: "row", style: "margin-top:12px" },
+      h("a", {
+        class: "button",
+        href: `/api/plans/active/calendar.ics?user_id=${userId}`,
+        download: "trainmetrics-plan.ics",
+      }, art("calendar"), "Zet in je agenda (.ics)")
+    ),
+    h("div", { style: "margin-top:12px" },
+      [...weeks.entries()].map(([week, sessions]) =>
+        h("details", { class: "week", open: week === currentWeek },
+          h("summary", {},
+            `Week ${week}`,
+            ` · ${sessions.filter((session) => session.completed).length}/${sessions.length}`),
+          sessions.map(sessionRow)
+        )
+      )
+    )
+  );
+}
+
+async function coachView() {
+  const plan = await api(`/api/plans/active?user_id=${userId}`);
+
+  const opening = plan
+    ? plan.warning || `${GOALS[plan.goal]}, hè. Goed. Doe wat er staat, niet wat je zin hebt. En als iets pijn doet, zeg je het.`
+    : "Vertel me wat je wilt bereiken en hoe vaak je kunt komen. Dan zet ik er een plan tegenover. Daar hoeft de laptop niet eens voor aan.";
+
+  const dialog = coachDialog(opening);
+
+  const ask = async (question) => {
+    dialog.say("Effe nadenken...");
+
+    try {
+      const result = await api("/api/coach/ask", {
+        json: { user_id: userId, question },
+      });
+
+      dialog.say(result.answer);
+    } catch (error) {
+      dialog.say(`${error.message}\n\nJe plan werkt gewoon, alleen mijn praatjes niet.`);
+    }
+  };
+
+  const presets = plan
+    ? ["Leg mijn plan van deze week uit", "Hoe ver sta ik met mijn doel?", "Ben ik goed bezig?"]
+    : ["Hoe ga ik de laatste weken?", "Wat moet ik eerst aanpakken?"];
 
   return [
-    h("h1", {}, "Activiteiten importeren"),
+    h("h1", {}, "Plan"),
+    dialog.element,
+    plan && planPanel(plan),
+    plan && schedulePanel(plan),
     h("section", { class: "card" },
-      h("p", {}, "Upload FIT-, GPX- of TCX-bestanden. Een bestand dat je al importeerde, wordt overgeslagen."),
+      h("h2", {}, plan ? "Ander doel" : "Nieuw plan"),
+      planForm(Boolean(plan))
+    ),
+    h("section", { class: "card" },
+      h("h2", {}, "Vraag het de coach"),
       h("p", { class: "muted" },
-        "Polar: open de training in Polar Flow en exporteer als TCX. ",
-        "Garmin: exporteer het origineel uit Garmin Connect (FIT)."),
+        "Dit gebruikt het taalmodel op je laptop, dus die moet aanstaan. Een antwoord kan een minuut duren en kan fouten bevatten. Bij pijn of blessures ga je naar een arts of kinesist."),
+      h("div", { class: "row", style: "margin-bottom:12px" },
+        presets.map((preset) => h("button", {
+          class: "small",
+          type: "button",
+          onclick: () => {
+            dialog.element.scrollIntoView({ block: "center" });
+            ask(preset);
+          },
+        }, preset))
+      ),
       h("form", {
         onsubmit: submitter(async (form) => {
-          results.replaceChildren();
-
-          for (const file of form.elements.files.files) {
-            const body = new FormData();
-            body.append("file", file);
-
-            try {
-              const result = await api(`/api/import/?user_id=${userId}`, { method: "POST", body });
-              const count = result.imported.length;
-
-              results.append(message(
-                `${file.name}: ${count} geïmporteerd${result.skipped ? `, ${result.skipped} overgeslagen` : ""}`
-              ));
-            } catch (error) {
-              results.append(message(`${file.name}: ${error.message}`, true));
-            }
-          }
-
+          dialog.element.scrollIntoView({ block: "center" });
+          await ask(fields(form).question);
           form.reset();
         }),
       },
-        h("label", {}, "Bestanden", h("input", {
-          name: "files", type: "file", accept: ".fit,.gpx,.tcx", multiple: true, required: true,
+        h("label", {}, "Je vraag", h("textarea", {
+          name: "question", rows: 2, maxlength: 1000, required: true,
         })),
-        h("div", {}, h("button", { class: "primary", type: "submit" }, "Importeren"))
+        h("div", {}, h("button", { class: "primary", type: "submit" }, "Vraag stellen"))
       )
     ),
-    results,
   ];
 }
 
-async function progress() {
-  const [exercises, records] = await Promise.all([
-    api("/api/exercises/"),
-    api(`/api/analytics/records?user_id=${userId}`),
-  ]);
+/* ---------- performance ---------- */
 
-  if (!exercises.length) {
-    return [
-      h("h1", {}, "Progressie"),
-      h("p", {}, "Voeg eerst oefeningen toe onder ", h("a", { href: "#beheer" }, "Beheer"), "."),
-    ];
+function formLabel(form) {
+  if (form > 5) return "fris";
+  if (form < -10) return "moe";
+  return "in balans";
+}
+
+function predictionPanel(estimate) {
+  const index = estimate.running_index;
+  const best = estimate.best_run;
+  const distances = ["5 km", "10 km", "Halve marathon", "Marathon"];
+  const hasIndex = Boolean(index?.predictions);
+
+  if (!hasIndex && !best) {
+    return h("section", { class: "card" },
+      h("h2", {}, "Geschatte racetijden"),
+      h("p", { class: "muted" }, "Loop minstens 3 km of synchroniseer met Polar, dan schat de coach je tijden."));
   }
 
-  const slot = h("div", {});
+  const columns = [{ label: "Afstand", value: (name) => name }];
 
-  const show = async (exerciseId) => {
-    const rows = await api(`/api/analytics/exercises/${exerciseId}/progress?user_id=${userId}`);
+  if (hasIndex) {
+    columns.push({ label: `Polar (Running Index ${decimal(index.average)})`, value: (name) => clock(index.predictions[name]) });
+  }
+
+  if (best) {
+    columns.push({ label: "Op basis van je snelste loop", value: (name) => clock(best.predictions[name]) });
+  }
+
+  return h("section", { class: "card" },
+    h("h2", {}, "Geschatte racetijden"),
+    table(columns, distances),
+    h("p", { class: "muted", style: "margin:12px 0 0" },
+      hasIndex ? `De Polar-kolom gebruikt het gemiddelde van je laatste ${index.sample_size} Running Index-waarden en de tabel van Polar. ` : "",
+      best ? `De andere kolom rekent met de formule van Riegel vanuit je ${kilometers(best.distance)} van ${dayLabel(best.date)}. Was dat geen volle inspanning, dan kun je sneller. ` : "",
+      "Dit zijn schattingen bij een maximale inspanning, geen beloftes.")
+  );
+}
+
+const PERIODS = [
+  ["", "Alles"],
+  ["365", "Laatste jaar"],
+  ["90", "Laatste 90 dagen"],
+  ["30", "Laatste 30 dagen"],
+];
+
+function sportHeadline(row) {
+  if (row.sport === "STRENGTH") {
+    return row.strength.volume_kg
+      ? `${decimal(row.strength.volume_kg / 1000)} ton`
+      : duration(row.duration_seconds);
+  }
+
+  return row.distance_meters ? kilometers(row.distance_meters) : duration(row.duration_seconds);
+}
+
+function sportTrend(row) {
+  const change = row.last_28_days - row.previous_28_days;
+
+  if (!row.last_28_days && !row.previous_28_days) return "Geen trainingen in de laatste 8 weken.";
+
+  const word = change > 0 ? `${change} meer dan` : change < 0 ? `${-change} minder dan` : "evenveel als";
+
+  return `${row.last_28_days} ${row.last_28_days === 1 ? "training" : "trainingen"} in de laatste 4 weken, ${word} de 4 weken ervoor.`;
+}
+
+function sportDetail(row) {
+  const pseudo = { activity_type: row.sport, average_speed: row.average_speed };
+  const isStrength = row.sport === "STRENGTH";
+  const hasDistance = row.distance_meters > 0;
+
+  const tiles = [
+    tile(decimal(row.sessions, 0), row.sessions === 1 ? "training" : "trainingen"),
+    tile(duration(row.duration_seconds), "totale tijd"),
+    hasDistance && tile(kilometers(row.distance_meters), "afstand"),
+    row.average_speed && tile(pace(pseudo), row.sport === "CYCLING" ? "gemiddeld" : "gemiddeld tempo"),
+    row.average_heart_rate && tile(`${row.average_heart_rate}`, "gem. hartslag"),
+    row.elevation_gain > 0 && tile(`${decimal(row.elevation_gain, 0)} m`, "hoogtemeters"),
+    row.calories > 0 && tile(decimal(row.calories, 0), "kcal"),
+    row.best_running_index && tile(String(row.best_running_index), "beste Running Index"),
+    isStrength && row.strength.sets > 0 && tile(decimal(row.strength.sets, 0), "sets"),
+    isStrength && row.strength.volume_kg > 0 && tile(`${decimal(row.strength.volume_kg, 0)} kg`, "volume"),
+  ];
+
+  const records = [
+    row.longest && ["Langste", `${kilometers(row.longest.distance)} op ${dayLabel(row.longest.date)}`],
+    row.fastest && ["Snelste", `${pace({ activity_type: row.sport, average_speed: row.fastest.speed })} over ${kilometers(row.fastest.distance)}, ${dayLabel(row.fastest.date)}`],
+    isStrength && row.strength.best_lift && ["Sterkste", `${row.strength.best_lift.exercise}: geschat 1RM ${decimal(row.strength.best_lift.estimated_1rm_kg)} kg, ${dayLabel(row.strength.best_lift.date)}`],
+  ].filter(Boolean);
+
+  const hasWeeklyDistance = row.weekly.some((week) => week.distance_meters > 0);
+
+  const chart = hasWeeklyDistance
+    ? {
+      title: "Afstand per week, laatste 26 weken",
+      y: (week) => week.distance_meters / 1000,
+      format: (value) => `${decimal(value)} km`,
+      label: "Afstand",
+    }
+    : {
+      title: "Trainingstijd per week, laatste 26 weken",
+      y: (week) => week.duration_seconds / 60,
+      format: (value) => `${decimal(value, 0)} min`,
+      label: "Tijd",
+    };
+
+  return h("div", {},
+    h("div", { class: "row", style: "margin-bottom:10px;gap:10px" },
+      h("div", { class: "scene-chip", style: "width:110px" }, art(row.sport)),
+      h("p", { class: "trend", style: "margin:0;flex:1;min-width:180px" }, sportTrend(row))
+    ),
+    h("div", { class: "tiles" }, tiles),
+    barChart(chart.title, row.weekly, {
+      x: (week) => shortDay(week.week_start),
+      y: chart.y,
+      format: chart.format,
+      columns: [
+        { label: "Week van", value: (week) => dayLabel(week.week_start) },
+        { label: "Trainingen", value: (week) => String(week.sessions) },
+        { label: chart.label, value: (week) => chart.format(chart.y(week)) },
+      ],
+    }),
+    records.length > 0 && h("div", { style: "margin-top:12px" },
+      h("h3", {}, "Records"),
+      table([
+        { label: "", value: (record) => record[0] },
+        { label: "", value: (record) => record[1] },
+      ], records)
+    )
+  );
+}
+
+function sportPanel() {
+  const body = h("div", {});
+  let selected = null;
+
+  const load = async (days) => {
+    const result = await api(`/api/analytics/sports?user_id=${userId}${days ? `&days=${days}` : ""}`);
+    const rows = result.sports.filter((row) => row.sessions > 0);
+
+    if (!rows.length) {
+      body.replaceChildren(h("p", { class: "muted" }, "Geen trainingen in deze periode."));
+      return;
+    }
+
+    if (!rows.some((row) => row.sport === selected)) selected = rows[0].sport;
+
+    const detail = h("div", {});
+    const cards = h("div", { class: "sport-cards" });
+
+    const select = (sport) => {
+      selected = sport;
+
+      cards.querySelectorAll("button").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.sport === sport));
+      });
+
+      detail.replaceChildren(sportDetail(rows.find((row) => row.sport === sport)));
+    };
+
+    rows.forEach((row) => {
+      const icon = art(`icon_${row.sport}`);
+
+      cards.append(h("button", {
+        class: "sport-card",
+        type: "button",
+        "data-sport": row.sport,
+        onclick: () => select(row.sport),
+      },
+        h("span", { class: "name" }, icon, SPORTS[row.sport]),
+        h("b", {}, sportHeadline(row)),
+        h("small", {}, `${row.sessions} × · ${Math.round(row.share_of_time * 100)}% van je tijd`),
+        h("span", { class: "share" }, h("i", { style: `width:${row.share_of_time * 100}%` }))
+      ));
+    });
+
+    body.replaceChildren(cards, detail);
+    select(selected);
+  };
+
+  const period = h("select", {
+    "aria-label": "Periode",
+    style: "width:auto",
+    onchange: (event) => load(event.target.value).catch((error) => {
+      body.replaceChildren(message(error.message, true));
+    }),
+  }, PERIODS.map(([value, label]) => h("option", { value }, label)));
+
+  load("").catch((error) => body.replaceChildren(message(error.message, true)));
+
+  return h("section", { class: "card" },
+    h("div", { class: "row spread", style: "margin-bottom:12px" },
+      h("h2", { style: "margin:0" }, "Per sport"),
+      period
+    ),
+    body
+  );
+}
+
+async function statisticsView() {
+  const [weeks, estimate, exercises, records, rows, weights] = await Promise.all([
+    api(`/api/analytics/weekly?user_id=${userId}`),
+    api(`/api/analytics/estimates?user_id=${userId}`),
+    api("/api/exercises/"),
+    api(`/api/analytics/records?user_id=${userId}`),
+    api("/api/body-measurements/"),
+    api(`/api/analytics/body-weight?user_id=${userId}`),
+  ]);
+
+  const progressSlot = h("div", {});
+
+  const showExercise = async (exerciseId) => {
+    const progress = await api(`/api/analytics/exercises/${exerciseId}/progress?user_id=${userId}`);
     const format = (value) => `${decimal(value)} kg`;
 
-    slot.replaceChildren(rows.length
-      ? lineChart("Geschat 1RM per trainingsdag", rows, {
+    progressSlot.replaceChildren(progress.length
+      ? lineChart("Geschat 1RM per trainingsdag", progress, {
         x: (row) => row.date,
         y: (row) => row.estimated_1rm_kg,
         format,
@@ -797,53 +1586,14 @@ async function progress() {
       : h("p", { class: "muted" }, "Nog geen sets voor deze oefening."));
   };
 
-  // Open on an exercise that has data, so the page starts with a chart.
-  const initial = records[0]?.exercise_id ?? exercises[0].id;
+  const initial = records[0]?.exercise_id ?? exercises[0]?.id;
 
-  await show(initial);
+  if (initial !== undefined) await showExercise(initial);
 
-  return [
-    h("h1", {}, "Progressie"),
-    h("section", { class: "card" },
-      h("label", { style: "margin-bottom:12px" }, "Oefening",
-        h("select", {
-          onchange: (event) => show(event.target.value).catch((error) => {
-            slot.replaceChildren(message(error.message, true));
-          }),
-        }, exercises.map((exercise) => {
-          const option = h("option", { value: exercise.id }, exercise.name);
-          option.selected = exercise.id === initial;
-          return option;
-        }))
-      ),
-      slot
-    ),
-    h("section", { class: "card" },
-      h("h2", {}, "Persoonlijke records"),
-      records.length
-        ? table([
-          { label: "Oefening", value: (row) => row.exercise },
-          { label: "Zwaarste set", value: (row) => `${decimal(row.top_weight_kg)} kg` },
-          { label: "Op", value: (row) => dayLabel(row.top_weight_date) },
-          { label: "Geschat 1RM", value: (row) => `${decimal(row.estimated_1rm_kg)} kg` },
-          { label: "Op", value: (row) => dayLabel(row.estimated_1rm_date) },
-        ], records)
-        : h("p", { class: "muted" }, "Nog geen records."),
-      h("p", { class: "muted", style: "margin:12px 0 0" },
-        "Het geschatte 1RM gebruikt de Epley-formule: gewicht × (1 + herhalingen / 30).")
-    ),
-  ];
-}
+  const fitness = estimate.fitness;
+  const value = (amount, unit) => (amount === null ? "–" : `${decimal(amount)} ${unit}`);
 
-async function measurements() {
-  const [rows, weights] = await Promise.all([
-    api("/api/body-measurements/"),
-    api(`/api/analytics/body-weight?user_id=${userId}`),
-  ]);
-
-  const value = (number, unit) => (number === null ? "–" : `${decimal(number)} ${unit}`);
-
-  const remove = async (row) => {
+  const removeMeasurement = async (row) => {
     if (!confirm(`Meting van ${dayLabel(row.date)} verwijderen?`)) return;
 
     await api(`/api/body-measurements/${row.id}`, { method: "DELETE" });
@@ -851,9 +1601,70 @@ async function measurements() {
   };
 
   return [
-    h("h1", {}, "Metingen"),
+    h("h1", {}, "Statistieken"),
+    fitness && h("div", { class: "tiles" },
+      tile(decimal(fitness.fitness, 0), "fitheid"),
+      tile(decimal(fitness.fatigue, 0), "vermoeidheid"),
+      tile(formLabel(fitness.form), `vorm (${decimal(fitness.form, 0)})`),
+      estimate.running_index && tile(decimal(estimate.running_index.average), "Running Index")
+    ),
+    weeklyPanel(weeks),
+    sportPanel(),
+    fitness && h("section", { class: "card" },
+      lineChart("Fitheid, laatste 90 dagen", estimate.fitness_series, {
+        x: (row) => row.date,
+        y: (row) => row.fitness,
+        format: (amount) => decimal(amount, 0),
+        columns: [
+          { label: "Datum", value: (row) => dayLabel(row.date) },
+          { label: "Fitheid", value: (row) => decimal(row.fitness) },
+          { label: "Vermoeidheid", value: (row) => decimal(row.fatigue) },
+          { label: "Vorm", value: (row) => decimal(row.form) },
+        ],
+      }),
+      h("p", { class: "muted", style: "margin:12px 0 0" },
+        `Geschat uit je trainingen: fitheid is je inspanning van de laatste 6 weken, vermoeidheid die van de laatste week, en vorm het verschil. De inspanning komt uit duur en hartslag, met een maximale hartslag van ${estimate.max_heart_rate}.`)
+    ),
+    predictionPanel(estimate),
+    estimate.running_index?.trend.length > 1 && h("section", { class: "card" },
+      lineChart("Running Index", estimate.running_index.trend, {
+        x: (row) => row.date,
+        y: (row) => row.running_index,
+        format: (amount) => decimal(amount, 0),
+        columns: [
+          { label: "Datum", value: (row) => dayLabel(row.date) },
+          { label: "Running Index", value: (row) => String(row.running_index) },
+        ],
+      })
+    ),
+    exercises.length > 0 && h("section", { class: "card" },
+      h("h2", {}, "Kracht"),
+      h("label", { style: "margin-bottom:12px" }, "Oefening",
+        h("select", {
+          onchange: (event) => showExercise(event.target.value).catch((error) => {
+            progressSlot.replaceChildren(message(error.message, true));
+          }),
+        }, exercises.map((exercise) => {
+          const option = h("option", { value: exercise.id }, exercise.name);
+          option.selected = exercise.id === initial;
+          return option;
+        }))
+      ),
+      progressSlot,
+      h("h3", { style: "margin-top:16px" }, "Persoonlijke records"),
+      records.length
+        ? table([
+          { label: "Oefening", value: (row) => row.exercise },
+          { label: "Zwaarste set", value: (row) => `${decimal(row.top_weight_kg)} kg` },
+          { label: "Geschat 1RM", value: (row) => `${decimal(row.estimated_1rm_kg)} kg` },
+          { label: "Op", value: (row) => dayLabel(row.estimated_1rm_date) },
+        ], records)
+        : h("p", { class: "muted" }, "Nog geen records."),
+      h("p", { class: "muted", style: "margin:12px 0 0" },
+        "Het geschatte 1RM gebruikt de Epley-formule: gewicht × (1 + herhalingen / 30).")
+    ),
     h("section", { class: "card" },
-      h("h2", {}, "Nieuwe meting"),
+      h("h2", {}, "Metingen"),
       h("form", {
         onsubmit: submitter(async (form) => {
           const values = fields(form);
@@ -882,11 +1693,9 @@ async function measurements() {
           h("label", {}, "Borst (cm)", h("input", { name: "chest", type: "number", min: 0, step: "0.1", inputmode: "decimal" }))
         ),
         h("div", {}, h("button", { class: "primary", type: "submit" }, "Meting opslaan"))
-      )
-    ),
-    weights.length > 0 && h("section", { class: "card" }, weightChart(weights)),
-    rows.length > 0 && h("section", { class: "card" },
-      table([
+      ),
+      weights.length > 0 && h("div", { style: "margin-top:16px" }, weightChart(weights)),
+      rows.length > 0 && h("div", { style: "margin-top:16px" }, table([
         { label: "Datum", value: (row) => dayLabel(row.date) },
         { label: "Gewicht", value: (row) => value(row.weight, "kg") },
         { label: "Vet", value: (row) => value(row.body_fat, "%") },
@@ -895,13 +1704,167 @@ async function measurements() {
         {
           label: "",
           value: (row) => h("button", {
-            class: "danger small", type: "button", onclick: () => remove(row),
+            class: "danger small", type: "button", onclick: () => removeMeasurement(row),
           }, "Verwijderen"),
         },
-      ], rows)
+      ], rows))
     ),
   ];
 }
+
+/* ---------- trophies ---------- */
+
+function trophies() {
+  const earned = game.badges.filter((badge) => badge.earned_on).length;
+
+  return [
+    art("trophy"),
+    h("h1", {}, "Trofeeën"),
+    playerPanel(),
+    h("section", { class: "card" },
+      h("h2", {}, `Badges (${earned} van ${game.badges.length})`),
+      h("div", { class: "badges" }, game.badges.map((badge) =>
+        h("div", { class: `badge ${badge.earned_on ? "earned" : "locked"}` },
+          medal(Boolean(badge.earned_on)),
+          h("h3", {}, badge.name),
+          h("p", { class: "muted", style: "margin:0" }, badge.description),
+          badge.earned_on
+            ? h("p", { class: "muted", style: "margin:4px 0 0" }, dayLabel(badge.earned_on))
+            : badge.target > 1 && h("p", { class: "muted", style: "margin:4px 0 0" }, `${badge.progress} / ${badge.target}`)
+        )
+      ))
+    ),
+    game.recent.length > 0 && h("section", { class: "card" },
+      h("h2", {}, "Laatst verdiend"),
+      table([
+        { label: "XP", value: (row) => `+${row.xp}` },
+        { label: "Waarvoor", value: (row) => row.label },
+        { label: "Datum", value: (row) => dayLabel(row.date) },
+      ], game.recent)
+    ),
+    h("p", { class: "muted" },
+      "Je scoort XP met elke training (meer als die zwaarder was), records, quests, plantrainingen en metingen."),
+  ];
+}
+
+/* ---------- sync ---------- */
+
+const POLAR_RESULTS = {
+  gekoppeld: ["Je Polar-account is gekoppeld. Klik op Nu ophalen voor je trainingen.", false],
+  geweigerd: ["Het koppelen is niet gelukt of werd geweigerd. Probeer het opnieuw.", true],
+  mislukt: ["Polar weigerde de koppeling. Controleer je client-ID en secret, en probeer het opnieuw.", true],
+};
+
+async function syncView() {
+  const status = await api(`/api/polar/status?user_id=${userId}`);
+  const result = POLAR_RESULTS[new URLSearchParams(location.hash.split("?")[1]).get("polar")];
+  const output = h("div", { "aria-live": "polite" }, result && message(...result));
+  const results = h("div", { "aria-live": "polite" });
+
+  const fetchNow = async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+
+    try {
+      const counts = await api(`/api/polar/sync?user_id=${userId}`, { method: "POST" });
+
+      await route();
+
+      const total = counts.imported + counts.updated + counts.skipped;
+
+      document.getElementById("polar-output")?.replaceChildren(message(
+        total
+          ? `${counts.imported} nieuw, ${counts.updated} aangevuld, ${counts.skipped} waren er al.`
+          : "De koppeling werkt, maar Polar heeft nog geen trainingen voor deze app. Polar geeft alleen trainingen die na het koppelen naar Polar Flow zijn geüpload. Je volgende training komt dus vanzelf door; oudere upload je hieronder als bestand."
+      ));
+    } catch (error) {
+      output.replaceChildren(message(error.message, true));
+      button.disabled = false;
+    }
+  };
+
+  const unlink = async () => {
+    if (!confirm("Polar ontkoppelen? Je trainingen blijven staan.")) return;
+
+    await api(`/api/polar/link?user_id=${userId}`, { method: "DELETE" });
+    location.hash = "#profiel";
+    route();
+  };
+
+  output.id = "polar-output";
+
+  let polar;
+
+  if (!status.configured) {
+    polar = [
+      h("p", {}, "De koppeling is nog niet ingesteld. Maak een gratis API-client aan op ",
+        h("a", { href: "https://admin.polaraccesslink.com", target: "_blank", rel: "noreferrer" }, "admin.polaraccesslink.com"),
+        " en zet de gegevens in backend/.env. De stappen staan in docs/deployment.md."),
+    ];
+  } else if (!status.linked) {
+    polar = [
+      h("p", {}, "Koppel je Polar-account. Daarna komen nieuwe trainingen vanzelf hierheen, inclusief je Running Index."),
+      h("a", { class: "button primary", href: `/api/polar/connect?user_id=${userId}` }, "Koppel met Polar"),
+    ];
+  } else {
+    polar = [
+      h("p", {}, status.last_sync_at
+        ? `Laatst opgehaald: ${dayLabel(status.last_sync_at)} om ${status.last_sync_at.slice(11, 16)}.`
+        : "Gekoppeld, maar nog niets opgehaald."),
+      h("div", { class: "row" },
+        h("button", { class: "primary", type: "button", onclick: fetchNow }, "Nu ophalen"),
+        h("button", { class: "small", type: "button", onclick: unlink }, "Ontkoppelen")
+      ),
+    ];
+  }
+
+  return [
+    h("section", { class: "card" },
+      h("h2", {}, "Polar"),
+      output,
+      polar,
+      h("p", { class: "muted", style: "margin:12px 0 0" },
+        "Polar geeft alleen trainingen uit de laatste 30 dagen die na het koppelen zijn geüpload. Oudere trainingen upload je hieronder als bestand.")
+    ),
+    h("section", { class: "card" },
+      h("h2", {}, "Bestanden"),
+      h("p", {}, "Upload FIT-, GPX- of TCX-bestanden. Wat je al importeerde, wordt overgeslagen."),
+      h("p", { class: "muted" }, "Polar Flow: open een training en exporteer als TCX. Garmin Connect: exporteer het origineel (FIT)."),
+      h("form", {
+        onsubmit: submitter(async (form) => {
+          results.replaceChildren();
+
+          for (const file of form.elements.files.files) {
+            const body = new FormData();
+            body.append("file", file);
+
+            try {
+              const result = await api(`/api/import/?user_id=${userId}`, { method: "POST", body });
+              const count = result.imported.length;
+
+              results.append(message(
+                `${file.name}: ${count} geïmporteerd${result.skipped ? `, ${result.skipped} overgeslagen` : ""}`
+              ));
+            } catch (error) {
+              results.append(message(`${file.name}: ${error.message}`, true));
+            }
+          }
+
+          form.reset();
+          await refreshGame();
+        }),
+      },
+        h("label", {}, "Bestanden", h("input", {
+          name: "files", type: "file", accept: ".fit,.gpx,.tcx", multiple: true, required: true,
+        })),
+        h("div", {}, h("button", { class: "primary", type: "submit" }, "Importeren"))
+      )
+    ),
+    results,
+  ];
+}
+
+/* ---------- management ---------- */
 
 async function management() {
   const [exercises, equipment] = await Promise.all([
@@ -919,11 +1882,11 @@ async function management() {
       route();
     } catch (error) {
       failure.replaceChildren(message(error.message, true));
+      failure.scrollIntoView({ block: "center" });
     }
   };
 
   return [
-    h("h1", {}, "Beheer"),
     failure,
     h("section", { class: "card" },
       h("h2", {}, "Oefeningen"),
@@ -1020,56 +1983,36 @@ async function management() {
   ];
 }
 
-function coachView() {
-  const output = h("div", { "aria-live": "polite" });
+async function profileView() {
+  const [sync, manage] = await Promise.all([syncView(), management()]);
 
   return [
-    h("h1", {}, "Coach"),
-    h("section", { class: "card" },
-      h("p", {}, "De coach draait op je eigen laptop, dus je gegevens blijven thuis. De laptop moet aanstaan, en een antwoord kan een minuut duren."),
-      h("form", {
-        onsubmit: submitter(async (form) => {
-          output.replaceChildren(message("De coach denkt na…"));
-
-          try {
-            const result = await api("/api/coach/ask", {
-              json: { user_id: userId, question: fields(form).question },
-            });
-
-            output.replaceChildren(h("section", { class: "card answer" }, result.answer));
-          } catch (error) {
-            output.replaceChildren(message(error.message, true));
-          }
-        }),
-      },
-        h("label", {}, "Je vraag", h("textarea", {
-          name: "question",
-          rows: 3,
-          maxlength: 1000,
-          required: true,
-          placeholder: "Hoeveel heb ik de afgelopen weken gelopen?",
-        })),
-        h("div", {}, h("button", { class: "primary", type: "submit" }, "Vraag stellen"))
-      )
-    ),
-    output,
-    h("p", { class: "muted" }, "Een taalmodel kan fouten maken. Controleer belangrijke cijfers, en vraag bij blessures een arts of kinesist om advies."),
+    h("h1", {}, "Profiel"),
+    sync,
+    manage,
+    h("p", { class: "muted" },
+      "Afbeeldingen: ",
+      h("a", { href: "https://github.com/microsoft/fluentui-emoji", target: "_blank", rel: "noreferrer" }, "Fluent Emoji"),
+      " van Microsoft (MIT) en ",
+      h("a", { href: "https://googlefonts.github.io/noto-emoji-animation/", target: "_blank", rel: "noreferrer" }, "Noto Animated Emoji"),
+      " van Google (",
+      h("a", { href: "https://creativecommons.org/licenses/by/4.0/", target: "_blank", rel: "noreferrer" }, "CC BY 4.0"),
+      ")."),
   ];
 }
 
 function setupView() {
   return [
-    h("h1", {}, "Welkom bij TrainMetrics"),
+    coachDialog("Nieuw gezicht. Hoe heet je? En ga niet zitten, we zijn er nog niet.").element,
     h("section", { class: "card" },
       h("form", {
         onsubmit: submitter(async (form) => {
           const created = await api("/api/users/", { json: fields(form) });
           userId = created.id;
-          location.hash = "#overzicht";
+          location.hash = "#vandaag";
           route();
         }),
       },
-        h("p", {}, "Maak eerst je profiel aan."),
         h("div", { class: "fields" },
           h("label", {}, "Naam", h("input", { name: "name", required: true })),
           h("label", {}, "E-mail", h("input", { name: "email", type: "email", required: true }))
@@ -1083,29 +2026,24 @@ function setupView() {
 /* ---------- routing ---------- */
 
 const VIEWS = {
-  overzicht: overview,
+  vandaag: overview,
   trainingen: trainings,
-  import: importView,
-  progressie: progress,
-  metingen: measurements,
-  beheer: management,
-  coach: coachView,
+  plan: coachView,
+  statistieken: statisticsView,
+  trofeeen: trophies,
+  profiel: profileView,
 };
 
 let routeCounter = 0;
 
 async function route() {
   const current = ++routeCounter;
-  const name = location.hash.slice(1);
-  const view = VIEWS[name] ? name : "overzicht";
+  const name = location.hash.slice(1).split("?")[0];
+  const view = VIEWS[name] ? name : "vandaag";
 
-  document.querySelectorAll(".site-header nav a").forEach((link) => {
-    if (link.getAttribute("href") === `#${view}`) {
-      link.setAttribute("aria-current", "page");
-      link.scrollIntoView({ block: "nearest", inline: "nearest" });
-    } else {
-      link.removeAttribute("aria-current");
-    }
+  document.querySelectorAll("[data-view]").forEach((link) => {
+    if (link.dataset.view === view) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
   });
 
   try {
@@ -1120,11 +2058,13 @@ async function route() {
       userId = users[0].id;
     }
 
+    await refreshGame();
+
     const content = await VIEWS[view]();
 
     // A slower earlier view must not overwrite the page the user went to.
     if (current === routeCounter) {
-      app.replaceChildren(...[content].flat().flat().filter(Boolean));
+      app.replaceChildren(...[content].flat(3).filter(Boolean));
     }
   } catch (error) {
     if (current === routeCounter) app.replaceChildren(message(error.message, true));

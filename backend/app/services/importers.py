@@ -35,7 +35,7 @@ class ParsedActivity:
     calories: int | None = None
 
 
-def _activity_type(sport: str | None) -> str:
+def activity_type_for_sport(sport: str | None) -> str:
     sport = (sport or "").lower()
 
     if "run" in sport:
@@ -95,7 +95,7 @@ def _parse_fit(content: bytes) -> list[ParsedActivity]:
             activities.append(
                 ParsedActivity(
                     date=_local_time(start),
-                    activity_type=_activity_type(str(sport)),
+                    activity_type=activity_type_for_sport(str(sport)),
                     distance=distance,
                     duration=duration,
                     average_speed=(
@@ -144,7 +144,7 @@ def _parse_gpx(content: bytes) -> list[ParsedActivity]:
         activities.append(
             ParsedActivity(
                 date=_local_time(start),
-                activity_type=_activity_type(track.type or track.name),
+                activity_type=activity_type_for_sport(track.type or track.name),
                 distance=distance,
                 duration=duration,
                 average_speed=speed_in_meters_per_second(distance, duration),
@@ -220,7 +220,7 @@ def _parse_tcx(content: bytes) -> list[ParsedActivity]:
         activities.append(
             ParsedActivity(
                 date=_local_time(datetime.fromisoformat(start)),
-                activity_type=_activity_type(activity.get("Sport")),
+                activity_type=activity_type_for_sport(activity.get("Sport")),
                 distance=distance,
                 duration=whole_duration,
                 average_speed=speed_in_meters_per_second(distance, whole_duration),

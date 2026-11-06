@@ -26,6 +26,7 @@ class EnduranceActivity(Base):
     max_heart_rate: Mapped[int | None] = mapped_column(Integer)
     elevation_gain: Mapped[float | None] = mapped_column(Float)
     calories: Mapped[int | None] = mapped_column(Integer)
+    running_index: Mapped[int | None] = mapped_column(Integer)
 
     workout: Mapped["Workout"] = relationship(
         back_populates="endurance_activity",

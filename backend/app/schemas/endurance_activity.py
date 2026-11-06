@@ -55,6 +55,7 @@ class EnduranceActivityResponse(BaseModel):
     max_heart_rate: int | None
     elevation_gain: float | None
     calories: int | None
+    running_index: int | None
 
     model_config = {
         "from_attributes": True
