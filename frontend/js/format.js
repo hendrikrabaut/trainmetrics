@@ -3,7 +3,6 @@ export const decimal = (value, digits = 1) =>
 
 export const kilometers = (meters) => `${decimal(meters / 1000)} km`;
 
-export const percentage = (part, whole) => `${Math.min(100, (part / whole) * 100)}%`;
 
 export function duration(seconds) {
   if (!seconds) return "–";

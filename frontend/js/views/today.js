@@ -3,6 +3,7 @@ import { art, coachDialog } from "../art.js";
 import { h, tile } from "../dom.js";
 import { SPORTS, dayLabel, decimal, duration, formLabel, isoDay, kilometers, localNow } from "../format.js";
 import { game, playerPanel, questPanel } from "../gamification.js";
+import { ring } from "../ring.js";
 import { workoutRow, workoutSport } from "../workouts.js";
 
 function coachLine(next, estimate, sleep) {
@@ -110,13 +111,17 @@ function weekPanel(plan, workouts) {
 
   const trained = workouts.filter((workout) => inWeek.has(workout.date.slice(0, 10)));
   const planned = sessions.filter((session) => inWeek.has(session.date));
+  const finished = planned.filter((session) => session.completed).length;
 
   return h("section", { class: "card" },
     h("div", { class: "row spread" },
       h("h2", { style: "margin:0" }, "Deze week"),
-      h("span", { class: "muted" }, planned.length
-        ? `${planned.filter((session) => session.completed).length} van ${planned.length} gepland gedaan`
-        : `${trained.length} ${trained.length === 1 ? "training" : "trainingen"}`)
+      planned.length
+        ? ring(finished, planned.length, {
+          label: `${finished} van ${planned.length} geplande trainingen gedaan`,
+          center: `${finished}/${planned.length}`,
+        })
+        : h("span", { class: "muted" }, `${trained.length} ${trained.length === 1 ? "training" : "trainingen"}`)
     ),
     h("div", { class: "week-strip", style: "margin-top:12px" }, days.map((day) => {
       const key = isoDay(day);
@@ -216,15 +221,19 @@ function nightPanel(sleep) {
   const night = sleep.last_night;
   const recovery = sleep.recovery;
 
+  const score = night.sleep_score;
+
   return h("section", { class: "card night-card" },
-    art("sleep"),
+    score === null
+      ? art("sleep")
+      : ring(score, 100, {
+        size: "medium",
+        label: `Slaapscore ${score} van 100`,
+        center: [h("b", {}, String(score)), h("small", {}, "score")],
+      }),
     h("div", {},
       h("h2", { style: "margin:0" }, "Afgelopen nacht"),
-      h("p", { style: "margin:0" },
-        [
-          night.asleep_seconds ? duration(night.asleep_seconds) : null,
-          night.sleep_score !== null ? `slaapscore ${night.sleep_score}` : null,
-        ].filter(Boolean).join(" · ")),
+      night.asleep_seconds && h("p", { style: "margin:0" }, duration(night.asleep_seconds)),
       recovery && h("span", { class: `recovery-pill ${recovery.status.toLowerCase()}` }, recoveryLabel(recovery))
     )
   );

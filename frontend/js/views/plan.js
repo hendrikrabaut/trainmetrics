@@ -6,7 +6,7 @@ import { api } from "../api.js";
 import { art, coachDialog } from "../art.js";
 import { fields, h, message, subTabs, submitter } from "../dom.js";
 import { PHASE_LABELS, PLAN_GOALS, SPORTS, dayLabel, duration, kilometers, localNow } from "../format.js";
-import { xpBar } from "../gamification.js";
+import { ring } from "../ring.js";
 import { route } from "../navigation.js";
 
 
@@ -200,23 +200,35 @@ function planPanel(plan) {
   const currentWeek = nextOpen?.week;
 
   return h("section", { class: "card" },
-    h("div", { class: "row spread" },
-      h("h2", { style: "margin:0" }, `Plan: ${plan.goal_name}`),
-      h("span", { class: "muted" }, `${plan.completed} van ${plan.total} gedaan`)
+    h("div", { class: "ring-heading" },
+      ring(plan.completed, plan.total, {
+        size: "medium",
+        label: `${plan.completed} van ${plan.total} trainingen van het plan gedaan`,
+        center: h("b", {}, `${plan.total ? Math.round((plan.completed / plan.total) * 100) : 0}%`),
+      }),
+      h("div", {},
+        h("h2", { style: "margin:0" }, `Plan: ${plan.goal_name}`),
+        h("span", { class: "muted" }, `${plan.completed} van ${plan.total} gedaan`)
+      )
     ),
-    h("p", { class: "muted" },
+    h("p", { class: "muted", style: "margin-bottom:0" },
       `${dayLabel(plan.start_date)} tot ${dayLabel(plan.end_date)}. Een training telt mee als je die sport in dezelfde week doet.`),
-    xpBar(plan.completed, plan.total, "Voortgang van het plan"),
     plan.warning && h("div", { class: "message", style: "margin-top:12px" }, plan.warning),
     h("div", { style: "margin-top:12px" },
-      [...weeks.entries()].map(([week, sessions]) =>
-        h("details", { class: "week", open: week === currentWeek },
+      [...weeks.entries()].map(([week, sessions]) => {
+        const summary = plan.weeks.find((row) => row.week === week);
+
+        return h("details", { class: "week", open: week === currentWeek },
           h("summary", {},
+            ring(summary.completed, summary.total, {
+              size: "tiny",
+              label: `${summary.completed} van ${summary.total} trainingen van week ${week} gedaan`,
+            }),
             `Week ${week}`,
-            weekSummary(plan.weeks.find((row) => row.week === week))),
+            weekSummary(summary)),
           sessions.map(sessionRow)
-        )
-      )
+        );
+      })
     )
   );
 }

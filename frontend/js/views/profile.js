@@ -4,6 +4,10 @@ import { fields, h, message, number, submitter, table } from "../dom.js";
 import { SPORTS, dayLabel, kilometers } from "../format.js";
 import { refreshGame } from "../gamification.js";
 import { route } from "../navigation.js";
+import { ring } from "../ring.js";
+
+// From this share of its lifetime, gear shows it is nearly worn out.
+const WEAR_WARNING = 0.85;
 
 const POLAR_RESULTS = {
   gekoppeld: ["Je Polar-account is gekoppeld. Klik op Nu ophalen voor je trainingen.", false],
@@ -290,16 +294,13 @@ async function management() {
         },
         {
           label: "Gebruik",
-          value: (row) => h("div", {},
-            row.kilometers ? kilometers(row.kilometers * 1000) : `${row.sessions}×`,
-            row.replace_after_km > 0 && h("div", {
-              class: "xp-bar gear-bar",
-              role: "progressbar",
-              "aria-label": `${row.kilometers} van ${row.replace_after_km} km`,
-            }, h("div", {
-              class: "xp-fill",
-              style: `width:${Math.min(100, (row.kilometers / row.replace_after_km) * 100)}%`,
-            }))
+          value: (row) => h("div", { class: "gear-use" },
+            row.replace_after_km > 0 && ring(row.kilometers, row.replace_after_km, {
+              label: `${row.kilometers} van ${row.replace_after_km} km`,
+              center: `${Math.round((row.kilometers / row.replace_after_km) * 100)}%`,
+              warning: row.kilometers / row.replace_after_km >= WEAR_WARNING,
+            }),
+            h("span", {}, row.kilometers ? kilometers(row.kilometers * 1000) : `${row.sessions}×`)
           ),
         },
         {

@@ -1,37 +1,21 @@
 import { api } from "./api.js";
 import { art, confetti, picture } from "./art.js";
 import { h } from "./dom.js";
-import { decimal, percentage } from "./format.js";
+import { decimal } from "./format.js";
+import { ring } from "./ring.js";
 
 export let game = null;
 
-export function xpBar(part, whole, label) {
-  return h("div", {
-    class: "xp-bar",
-    role: "progressbar",
-    "aria-valuemin": 0,
-    "aria-valuemax": whole,
-    "aria-valuenow": part,
-    "aria-label": label,
-  }, h("div", {
-    class: "xp-fill",
-    style: `width:${percentage(part, whole)}`,
-  }));
-}
-
 export function playerPanel() {
-  const total = h("span", { class: "level-total" }, `${decimal(game.xp, 0)} XP`);
-
   return h("section", { class: "card level-card" },
-    h("div", { class: "row spread" },
-      h("div", {},
-        h("span", { class: "level-number" }, `Level ${game.level}`),
-        h("span", { class: "level-title" }, game.title)
-      ),
-      total
-    ),
-    xpBar(game.xp_into_level, game.xp_for_next_level, "Voortgang naar het volgende level"),
-    h("div", { class: "row spread" },
+    ring(game.xp_into_level, game.xp_for_next_level, {
+      size: "large",
+      label: "Voortgang naar het volgende level",
+      center: [h("small", {}, "Level"), h("b", {}, String(game.level))],
+    }),
+    h("div", { class: "level-text" },
+      h("span", { class: "level-title" }, game.title),
+      h("span", { class: "level-total" }, `${decimal(game.xp, 0)} XP`),
       h("span", { class: "muted" },
         `Nog ${decimal(game.xp_for_next_level - game.xp_into_level, 0)} XP tot level ${game.level + 1}`),
       h("span", { class: "muted" },
@@ -45,14 +29,19 @@ export function questPanel() {
   return h("section", { class: "card" },
     h("h2", {}, "Quests van deze week"),
     h("div", { class: "quest-list" }, game.quests.map((quest) =>
-      h("div", { class: `quest${quest.completed ? " done" : ""}` },
-        h("div", { class: "row spread" },
-          h("h3", {}, quest.name),
-          h("span", { class: "xp-gain" }, `+${quest.xp} XP`)
-        ),
-        h("p", { class: "muted", style: "margin:0 0 4px" },
-          `${quest.description} (${quest.progress} van ${quest.target})`),
-        xpBar(quest.progress, quest.target, quest.name)
+      h("div", { class: "quest" },
+        ring(quest.progress, quest.target, {
+          label: `${quest.name}: ${quest.progress} van ${quest.target}`,
+          center: quest.completed ? "✓" : undefined,
+        }),
+        h("div", {},
+          h("div", { class: "row spread" },
+            h("h3", {}, quest.name),
+            h("span", { class: "xp-gain" }, `+${quest.xp} XP`)
+          ),
+          h("p", { class: "muted", style: "margin:0" },
+            `${quest.description} (${quest.progress} van ${quest.target})`)
+        )
       )
     ))
   );

@@ -3,6 +3,7 @@ import { art } from "../art.js";
 import { h, table } from "../dom.js";
 import { dayLabel } from "../format.js";
 import { game, medal, playerPanel } from "../gamification.js";
+import { ring } from "../ring.js";
 
 export function trophies() {
   const earned = game.badges.filter((badge) => badge.earned_on).length;
@@ -13,10 +14,24 @@ export function trophies() {
     playerPanel(),
     yearPanel(),
     h("section", { class: "card" },
-      h("h2", {}, `Badges (${earned} van ${game.badges.length})`),
+      h("div", { class: "row spread", style: "margin-bottom:12px" },
+        h("h2", { style: "margin:0" }, "Badges"),
+        ring(earned, game.badges.length, {
+          label: `${earned} van ${game.badges.length} badges verdiend`,
+          center: `${earned}/${game.badges.length}`,
+        })
+      ),
       h("div", { class: "badges" }, game.badges.map((badge) =>
         h("div", { class: `badge ${badge.earned_on ? "earned" : "locked"}` },
-          medal(Boolean(badge.earned_on)),
+          h("div", { class: "badge-art" },
+            badge.earned_on
+              ? medal(true)
+              : ring(badge.progress, badge.target, {
+                size: "medium",
+                label: `${badge.name}: ${badge.progress} van ${badge.target}`,
+                center: medal(false),
+              })
+          ),
           h("h3", {}, badge.name),
           h("p", { class: "muted", style: "margin:0" }, badge.description),
           badge.earned_on

@@ -282,30 +282,72 @@ main {
 
 .level-card { color: var(--on-dark); background: var(--wine); border: 0; }
 
-.level-card .muted, .level-card .level-total { color: #F0D5D0; font-size: 0.9rem; }
+.level-card { display: flex; align-items: center; gap: 16px; }
 
-.level-card .level-number { display: block; font-size: 2.4rem; font-weight: 800; line-height: 1.05; }
+.level-card .ring-track { stroke: rgb(255 255 255 / 0.22); }
 
-.level-card .level-title { font-size: 1.1rem; font-weight: 650; color: var(--peach); }
+.level-card .ring-fill { stroke: var(--peach); }
 
-.level-card .xp-bar { margin: 12px 0 8px; background: rgb(255 255 255 / 0.22); }
+.level-text { display: grid; gap: 2px; min-width: 0; }
 
-.level-card .xp-fill { background: var(--peach); }
+.level-card .muted { color: #F0D5D0; font-size: 0.9rem; }
+
+.level-card .level-title { font-size: 1.15rem; font-weight: 700; color: var(--peach); }
+
+.level-card .level-total { font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* ---------- rings ---------- */
+
+.ring { position: relative; flex: none; width: 60px; height: 60px; }
+
+.ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+
+.ring circle { fill: none; stroke-width: 15; }
+
+.ring-track { stroke: var(--sky); }
+
+.ring-fill { stroke: var(--wine); stroke-linecap: round; }
+
+.ring.warning .ring-fill { stroke: var(--peach); }
+
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-center b { font-weight: 800; }
+
+.ring-center small { font-size: 0.68rem; font-weight: 600; }
+
+.ring-large { width: 112px; height: 112px; }
+
+.ring-large circle { stroke-width: 11; }
+
+.ring-large .ring-center b { font-size: 2.1rem; }
+
+.ring-large .ring-center small { font-size: 0.78rem; }
+
+.ring-medium { width: 76px; height: 76px; }
+
+.ring-medium circle { stroke-width: 12; }
+
+.ring-medium .ring-center b { font-size: 1.15rem; }
+
+.ring-tiny { display: inline-block; width: 20px; height: 20px; margin-right: 8px; vertical-align: -5px; }
+
+.ring-tiny circle { stroke-width: 22; }
+
+.ring-heading { display: flex; align-items: center; gap: 14px; }
 
 /* ---------- XP ---------- */
-
-.xp-bar {
-  height: 10px;
-  overflow: hidden;
-  background: var(--soft);
-  border-radius: 999px;
-}
-
-.xp-fill {
-  height: 100%;
-  background: var(--wine);
-  border-radius: 999px;
-}
 
 .xp-gain {
   color: var(--wine);
@@ -319,9 +361,9 @@ main {
 
 .quest h3 { margin: 0; }
 
-.quest .xp-bar { height: 8px; }
+.quest { display: flex; align-items: center; gap: 12px; }
 
-.quest.done h3::before { content: "✓ "; color: var(--wine); }
+.quest > div:last-child { flex: 1; min-width: 0; }
 
 /* ---------- coach ---------- */
 
@@ -378,6 +420,12 @@ main {
 .medal { display: block; width: 52px; height: 52px; object-fit: contain; margin: 0 auto 8px; }
 
 .badge.locked .medal { filter: grayscale(1) opacity(0.45); }
+
+.badge-art { display: flex; align-items: center; justify-content: center; height: 76px; margin-bottom: 6px; }
+
+.badge-art .medal { margin: 0; }
+
+.badge-art .ring .medal { width: 40px; height: 40px; }
 
 /* ---------- forms and buttons ---------- */
 
@@ -964,7 +1012,7 @@ dialog.level-up .coach-art { display: none; }
 
 .gear-picker { max-width: 260px; }
 
-.gear-bar { width: 120px; height: 6px; margin-top: 4px; }
+.gear-use { display: flex; align-items: center; gap: 10px; }
 
 .gear-warning { color: var(--wine); font-size: 0.85rem; font-weight: 650; }
 
