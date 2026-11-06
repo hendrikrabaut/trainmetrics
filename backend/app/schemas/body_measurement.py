@@ -1,22 +1,24 @@
 from pydantic import BaseModel
 
+from app.schemas.common import IsoDate, NonNegativeFloat
+
 
 class BodyMeasurementCreate(BaseModel):
     user_id: int
-    date: str
-    weight: float | None = None
-    body_fat: float | None = None
-    waist: float | None = None
-    chest: float | None = None
+    date: IsoDate
+    weight: NonNegativeFloat | None = None
+    body_fat: NonNegativeFloat | None = None
+    waist: NonNegativeFloat | None = None
+    chest: NonNegativeFloat | None = None
     notes: str | None = None
 
 
 class BodyMeasurementUpdate(BaseModel):
-    date: str | None = None
-    weight: float | None = None
-    body_fat: float | None = None
-    waist: float | None = None
-    chest: float | None = None
+    date: IsoDate | None = None
+    weight: NonNegativeFloat | None = None
+    body_fat: NonNegativeFloat | None = None
+    waist: NonNegativeFloat | None = None
+    chest: NonNegativeFloat | None = None
     notes: str | None = None
 
 

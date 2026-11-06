@@ -1,19 +1,21 @@
 from pydantic import BaseModel
 
+from app.schemas.common import IsoDate, NonNegativeInt, WorkoutType
+
 # workouts
 
 class WorkoutCreate(BaseModel):
     user_id: int
-    date: str
-    duration: int | None = None
+    date: IsoDate
+    duration: NonNegativeInt | None = None
     notes: str | None = None
-    type: str
+    type: WorkoutType
 
 class WorkoutUpdate(BaseModel):
-    date: str | None = None
-    duration: int | None = None
+    date: IsoDate | None = None
+    duration: NonNegativeInt | None = None
     notes: str | None = None
-    type: str | None = None
+    type: WorkoutType | None = None
 
 class WorkoutResponse(BaseModel):
     id: int

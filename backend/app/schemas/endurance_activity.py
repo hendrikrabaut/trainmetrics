@@ -1,26 +1,47 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+from app.schemas.common import (
+    ActivityType,
+    HeartRate,
+    NonNegativeFloat,
+    NonNegativeInt,
+    speed_in_meters_per_second,
+)
 
 
 class EnduranceActivityCreate(BaseModel):
-    activity_type: str
-    distance: float | None = None
-    duration: int | None = None
-    average_speed: float | None = None
-    average_heart_rate: int | None = None
-    max_heart_rate: int | None = None
-    elevation_gain: float | None = None
-    calories: int | None = None
+    activity_type: ActivityType
+    distance: NonNegativeFloat | None = Field(None, description="Meters")
+    duration: NonNegativeInt | None = Field(None, description="Seconds")
+    average_speed: NonNegativeFloat | None = Field(
+        None,
+        description="m/s, calculated from distance and duration when omitted",
+    )
+    average_heart_rate: HeartRate | None = None
+    max_heart_rate: HeartRate | None = None
+    elevation_gain: NonNegativeFloat | None = Field(None, description="Meters")
+    calories: NonNegativeInt | None = None
+
+    @model_validator(mode="after")
+    def fill_average_speed(self):
+        if self.average_speed is None:
+            self.average_speed = speed_in_meters_per_second(
+                self.distance,
+                self.duration,
+            )
+
+        return self
 
 
 class EnduranceActivityUpdate(BaseModel):
-    activity_type: str | None = None
-    distance: float | None = None
-    duration: int | None = None
-    average_speed: float | None = None
-    average_heart_rate: int | None = None
-    max_heart_rate: int | None = None
-    elevation_gain: float | None = None
-    calories: int | None = None
+    activity_type: ActivityType | None = None
+    distance: NonNegativeFloat | None = None
+    duration: NonNegativeInt | None = None
+    average_speed: NonNegativeFloat | None = Field(None, description="m/s")
+    average_heart_rate: HeartRate | None = None
+    max_heart_rate: HeartRate | None = None
+    elevation_gain: NonNegativeFloat | None = None
+    calories: NonNegativeInt | None = None
 
 
 class EnduranceActivityResponse(BaseModel):

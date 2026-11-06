@@ -1,3 +1,6 @@
+-- Reference for the current schema. Changes are applied through the Alembic
+-- migrations in backend/migrations; keep this file in step with them.
+
 PRAGMA foreign_keys = ON;
 
 -- ============================================
@@ -24,6 +27,7 @@ CREATE TABLE workouts (
     duration INTEGER, -- duration in seconds
     notes TEXT,
     type TEXT NOT NULL CHECK (type IN ('STRENGTH', 'ENDURANCE')),
+    source_hash TEXT UNIQUE, -- imported file and session, NULL if entered by hand
 
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -78,7 +82,7 @@ CREATE TABLE endurance_activities (
 
     distance REAL,              -- meters
     duration INTEGER,           -- seconds
-    average_speed REAL,         -- km/h
+    average_speed REAL,         -- m/s
     average_heart_rate INTEGER, -- bpm
     max_heart_rate INTEGER,     -- bpm
     elevation_gain REAL,        -- meters

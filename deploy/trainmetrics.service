@@ -1,0 +1,16 @@
+[Unit]
+Description=TrainMetrics
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/trainmetrics/backend
+# Address of the laptop that runs Ollama. Replace with its local IP address.
+Environment=OLLAMA_URL=http://192.168.1.50:11434
+Environment=OLLAMA_MODEL=qwen3:4b
+ExecStart=/home/pi/trainmetrics/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

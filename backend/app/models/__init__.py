@@ -1,3 +1,5 @@
+from app.models.user import User
+from app.models.equipment import Equipment
 from app.models.workout import Workout
 from app.models.exercise import Exercise
 from app.models.workout_exercise import WorkoutExercise

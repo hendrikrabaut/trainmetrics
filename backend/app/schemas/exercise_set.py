@@ -1,17 +1,19 @@
 from pydantic import BaseModel
 
+from app.schemas.common import NonNegativeFloat, NonNegativeInt
+
 
 class ExerciseSetCreate(BaseModel):
     set_number: int
-    weight: float | None = None
-    reps: int | None = None
+    weight: NonNegativeFloat | None = None
+    reps: NonNegativeInt | None = None
     notes: str | None = None
 
 
 class ExerciseSetUpdate(BaseModel):
     set_number: int | None = None
-    weight: float | None = None
-    reps: int | None = None
+    weight: NonNegativeFloat | None = None
+    reps: NonNegativeInt | None = None
     notes: str | None = None
 
 

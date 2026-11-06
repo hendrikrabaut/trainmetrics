@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models.workout import Workout
@@ -73,9 +73,23 @@ def update_workout(
 
     return workout
 
-@router.get("/", response_model=list[WorkoutResponse])
-def get_workouts(db: Session = Depends(get_db)):
-    statement = select(Workout).order_by(Workout.date.desc())
+@router.get("/", response_model=list[WorkoutDetailResponse])
+def get_workouts(
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    statement = (
+        select(Workout)
+        .options(
+            selectinload(Workout.endurance_activity),
+            selectinload(Workout.exercises).options(
+                selectinload(WorkoutExercise.exercise),
+                selectinload(WorkoutExercise.sets),
+            ),
+        )
+        .order_by(Workout.date.desc())
+        .limit(limit)
+    )
 
     workouts = db.scalars(statement).all()
 

@@ -1,0 +1,8 @@
+[Unit]
+Description=TrainMetrics database backup
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/trainmetrics/backend
+ExecStart=/home/pi/trainmetrics/backend/.venv/bin/python scripts/backup_db.py
