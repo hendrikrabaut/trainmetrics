@@ -21,6 +21,7 @@ from app.models.polar_account import PolarAccount
 from app.models.workout import Workout
 from app.schemas.common import speed_in_meters_per_second
 from app.services.importers import activity_type_for_sport
+from app.services.routes import store_route
 from app.services.sleep import store_night
 
 
@@ -129,7 +130,7 @@ def register_user(access_token: str, member_id: str) -> None:
 
 def list_exercises(access_token: str) -> list[dict]:
     request = urllib.request.Request(
-        f"{_api_url()}/v3/exercises",
+        f"{_api_url()}/v3/exercises?route=true",
         headers={
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
@@ -275,11 +276,24 @@ def _heart_rate(exercise: dict, name: str) -> int | None:
     return round(value) if value else None
 
 
+def _store_route(db: Session, workout_id: int, exercise: dict) -> None:
+    points = [
+        (point.get("latitude"), point.get("longitude"))
+        for point in exercise.get("route") or []
+        if isinstance(point, dict)
+    ]
+
+    store_route(db, workout_id, points)
+
+
 def _store(db: Session, user_id: int, exercise: dict) -> str:
     """Stores one exercise. Returns 'imported', 'updated' or 'skipped'."""
     source_hash = f"polar:{exercise['id']}"
 
-    if db.scalar(select(Workout.id).where(Workout.source_hash == source_hash)):
+    known_id = db.scalar(select(Workout.id).where(Workout.source_hash == source_hash))
+
+    if known_id:
+        _store_route(db, known_id, exercise)
         return "skipped"
 
     start = _local_start(exercise)
@@ -292,6 +306,8 @@ def _store(db: Session, user_id: int, exercise: dict) -> str:
     )
 
     if existing is not None:
+        _store_route(db, existing.id, exercise)
+
         if running_index and existing.endurance_activity:
             existing.endurance_activity.running_index = running_index
             return "updated"
@@ -318,8 +334,7 @@ def _store(db: Session, user_id: int, exercise: dict) -> str:
 
     distance = _field(exercise, "distance")
 
-    db.add(
-        Workout(
+    workout = Workout(
             user_id=user_id,
             date=start,
             duration=seconds,
@@ -335,8 +350,10 @@ def _store(db: Session, user_id: int, exercise: dict) -> str:
                 calories=_field(exercise, "calories"),
                 running_index=running_index,
             ),
-        )
     )
+    db.add(workout)
+    db.flush()
+    _store_route(db, workout.id, exercise)
 
     return "imported"
 

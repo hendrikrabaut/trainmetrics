@@ -13,6 +13,7 @@ from app.routes.game import router as game_router
 from app.routes.imports import router as imports_router
 from app.routes.plans import router as plans_router
 from app.routes.polar import router as polar_router
+from app.routes.workout_routes import router as workout_routes_router
 from app.routes.users import router as users_router
 from app.routes.workouts import router as workouts_router
 from app.routes.exercises import router as exercises_router
@@ -56,6 +57,7 @@ app.include_router(coach_router)
 app.include_router(game_router)
 app.include_router(plans_router)
 app.include_router(polar_router)
+app.include_router(workout_routes_router)
 
 
 @app.get("/api/health")

@@ -2,7 +2,7 @@
 
 All values are normalized to the units the database uses: meters, seconds, m/s.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +16,8 @@ from app.schemas.common import speed_in_meters_per_second
 
 
 TCX_NAMESPACE = "{http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2}"
+
+FIT_SEMICIRCLE = 180 / 2**31
 
 
 class ActivityFileError(ValueError):
@@ -33,6 +35,7 @@ class ParsedActivity:
     max_heart_rate: int | None = None
     elevation_gain: float | None = None
     calories: int | None = None
+    route: list[tuple[float, float]] = field(default_factory=list)
 
 
 def activity_type_for_sport(sport: str | None) -> str:
@@ -64,12 +67,30 @@ def _whole(value) -> int | None:
 
 def _parse_fit(content: bytes) -> list[ParsedActivity]:
     activities = []
+    route = []
 
     # A multisport file, like a triathlon, holds one session per discipline.
+    # The GPS records of a session come before the session itself.
     with fitdecode.FitReader(BytesIO(content)) as reader:
         for frame in reader:
-            if frame.frame_type != fitdecode.FIT_FRAME_DATA or frame.name != "session":
+            if frame.frame_type != fitdecode.FIT_FRAME_DATA:
                 continue
+
+            if frame.name == "record":
+                latitude = frame.get_value("position_lat", fallback=None)
+                longitude = frame.get_value("position_long", fallback=None)
+
+                if latitude is not None and longitude is not None:
+                    route.append(
+                        (latitude * FIT_SEMICIRCLE, longitude * FIT_SEMICIRCLE)
+                    )
+
+                continue
+
+            if frame.name != "session":
+                continue
+
+            session_route, route = route, []
 
             def value(name):
                 return frame.get_value(name, fallback=None)
@@ -107,6 +128,7 @@ def _parse_fit(content: bytes) -> list[ParsedActivity]:
                     max_heart_rate=_whole(value("max_heart_rate")),
                     elevation_gain=value("total_ascent"),
                     calories=_whole(value("total_calories")),
+                    route=session_route,
                 )
             )
 
@@ -151,6 +173,11 @@ def _parse_gpx(content: bytes) -> list[ParsedActivity]:
                 average_heart_rate=round(sum(rates) / len(rates)) if rates else None,
                 max_heart_rate=max(rates) if rates else None,
                 elevation_gain=round(track.get_uphill_downhill().uphill, 1),
+                route=[
+                    (point.latitude, point.longitude)
+                    for segment in track.segments
+                    for point in segment.points
+                ],
             )
         )
 
@@ -232,6 +259,13 @@ def _parse_tcx(content: bytes) -> list[ParsedActivity]:
                 max_heart_rate=_whole(max_heart_rate),
                 elevation_gain=round(ascent, 1) if previous is not None else None,
                 calories=round(calories) if calories else None,
+                route=[
+                    (
+                        float(position.findtext(f"{TCX_NAMESPACE}LatitudeDegrees")),
+                        float(position.findtext(f"{TCX_NAMESPACE}LongitudeDegrees")),
+                    )
+                    for position in activity.iter(f"{TCX_NAMESPACE}Position")
+                ],
             )
         )
 

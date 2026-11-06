@@ -9,3 +9,4 @@ from app.models.body_measurement import BodyMeasurement
 from app.models.polar_account import PolarAccount
 from app.models.training_plan import TrainingPlan, PlanSession
 from app.models.sleep_night import SleepNight
+from app.models.workout_route import WorkoutRoute

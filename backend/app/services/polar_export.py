@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.workout import Workout
 from app.schemas.common import speed_in_meters_per_second
 from app.services.polar import parse_duration
+from app.services.routes import store_route
 from app.services.sleep import store_night
 
 
@@ -43,6 +44,22 @@ def _whole(value) -> int | None:
     return None if value is None else round(value)
 
 
+def _store_exercise_route(
+    db: Session,
+    workout_id: int,
+    exercise: dict,
+    counts: dict,
+) -> None:
+    route = (exercise.get("routes") or {}).get("route") or {}
+    points = [
+        (point.get("latitude"), point.get("longitude"))
+        for point in route.get("wayPoints") or []
+    ]
+
+    if store_route(db, workout_id, points):
+        counts["routes"] += 1
+
+
 def _store_exercise(
     db: Session,
     user_id: int,
@@ -51,8 +68,10 @@ def _store_exercise(
     counts: dict,
 ) -> None:
     source_hash = f"polar-export:{exercise['identifier']['id']}"
+    known_id = db.scalar(select(Workout.id).where(Workout.source_hash == source_hash))
 
-    if db.scalar(select(Workout.id).where(Workout.source_hash == source_hash)):
+    if known_id:
+        _store_exercise_route(db, known_id, exercise, counts)
         counts["skipped"] += 1
         return
 
@@ -68,6 +87,7 @@ def _store_exercise(
         if running_index and existing.endurance_activity:
             existing.endurance_activity.running_index = running_index
 
+        _store_exercise_route(db, existing.id, exercise, counts)
         counts["skipped"] += 1
         return
 
@@ -102,8 +122,7 @@ def _store_exercise(
     # Heart rate is stored per session, so it only fits a one-sport session.
     single_sport = len(session["exercises"]) == 1
 
-    db.add(
-        Workout(
+    workout = Workout(
             user_id=user_id,
             date=start,
             duration=seconds,
@@ -124,8 +143,10 @@ def _store_exercise(
                 calories=_whole(exercise.get("calories")),
                 running_index=running_index,
             ),
-        )
     )
+    db.add(workout)
+    db.flush()
+    _store_exercise_route(db, workout.id, exercise, counts)
     counts["imported"] += 1
 
 
@@ -249,6 +270,7 @@ def import_export(db: Session, user_id: int, folder: Path) -> dict:
         "skipped": 0,
         "weights": 0,
         "nights": 0,
+        "routes": 0,
         "unknown_sports": set(),
     }
 

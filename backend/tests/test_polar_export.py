@@ -258,3 +258,47 @@ def test_importing_sleep_twice_keeps_one_row(client, tmp_path):
     _import(tmp_path)
 
     assert len(client.get("/api/analytics/sleep").json()["nights"]) == 1
+
+
+def _with_route(session, count=50):
+    session["exercises"][0]["routes"] = {
+        "route": {
+            "wayPoints": [
+                {"latitude": 51 + index * 0.0005, "longitude": 4 + (index % 7) * 0.0003, "elapsedMillis": index * 1000}
+                for index in range(count)
+            ]
+        }
+    }
+    return session
+
+
+def test_routes_come_along_also_for_trainings_already_imported(client, tmp_path):
+    _write(tmp_path, _session("a", "2026-05-17T10:00:00"))
+    _import(tmp_path)
+
+    assert client.get("/api/workouts/").json()[0]["has_route"] is False
+
+    for file in tmp_path.glob("training-session_*"):
+        file.unlink()
+
+    _write(tmp_path, _with_route(_session("a", "2026-05-17T10:00:00")))
+    result = _import(tmp_path)
+
+    assert result["imported"] == 0
+    assert result["routes"] == 1
+
+    workout = client.get("/api/workouts/").json()[0]
+    route = client.get(f"/api/workouts/{workout['id']}/route").json()
+
+    assert workout["has_route"] is True
+    assert route["points"][0] == [51.0, 4.0]
+    assert len(route["points"]) >= 5
+
+    assert _import(tmp_path)["routes"] == 0
+
+
+def test_a_handful_of_points_is_no_route(client, tmp_path):
+    _write(tmp_path, _with_route(_session("a", "2026-07-09T17:10:57", sport="105"), count=4))
+
+    assert _import(tmp_path)["routes"] == 0
+    assert client.get("/api/workouts/").json()[0]["has_route"] is False

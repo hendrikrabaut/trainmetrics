@@ -59,6 +59,7 @@ class WorkoutDetailResponse(BaseModel):
     duration: int | None
     notes: str | None
     type: str
+    has_route: bool = False
 
     exercises: list[WorkoutExerciseDetail] = []
     endurance_activity: EnduranceActivityDetail | None = None

@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.endurance_activity import EnduranceActivity
 from app.models.workout import Workout
 from app.services.importers import ActivityFileError, parse_activity_file
+from app.services.routes import store_route
 
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -71,6 +72,8 @@ def import_activity_file(
         )
 
         db.add(workout)
+        db.flush()
+        store_route(db, workout.id, activity.route)
         imported.append(workout)
 
     db.commit()

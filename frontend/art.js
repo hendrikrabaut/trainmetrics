@@ -1,8 +1,7 @@
 "use strict";
 
-/* Pictures and their movement. The images come from Fluent Emoji and Noto
-   Animated Emoji, see assets/CREDITS.md. Movement is in style.css and stops for
-   people who ask for reduced motion. */
+/* Icons, rewards and maps. See assets/CREDITS.md for where they come from.
+   Only rewards move, and they stop for people who ask for reduced motion. */
 
 const SPORT_IMAGES = {
   RUNNING: "running",
@@ -16,7 +15,6 @@ const ANIMATED = {
   fire: "fire",
   trophy: "trophy",
   party: "party",
-  sleep: "sleep",
 };
 
 const reducedMotion = () =>
@@ -34,7 +32,7 @@ function picture(name, className = "", alt = "") {
   return image;
 }
 
-// A moving image, or the still version for reduced motion.
+// A moving reward, or the still version for reduced motion.
 function animatedPicture(name, className) {
   const holder = document.createElement("picture");
   const still = document.createElement("source");
@@ -50,55 +48,15 @@ function animatedPicture(name, className) {
   return holder;
 }
 
-function decoration(className) {
-  const part = document.createElement("span");
-  part.className = className;
-  return part;
-}
+// A one-color icon. The color comes from CSS, through a mask.
+function glyph(name, className = "") {
+  const icon = document.createElement("span");
 
-// A figure with movement around it, as a scene for one sport.
-function sportScene(sport) {
-  const scene = document.createElement("div");
+  icon.className = `glyph ${className}`.trim();
+  icon.style.setProperty("--icon", `url("assets/icons/${name}.svg")`);
+  icon.setAttribute("aria-hidden", "true");
 
-  scene.className = `scene scene-${SPORT_IMAGES[sport]}`;
-  scene.setAttribute("aria-hidden", "true");
-  scene.append(decoration("glow"));
-
-  if (sport === "OTHER") scene.append(picture("mountain", "backdrop"));
-
-  if (sport === "RUNNING" || sport === "CYCLING") {
-    for (let index = 1; index <= 3; index += 1) {
-      scene.append(decoration(`speed-line speed-line-${index}`));
-    }
-  }
-
-  if (sport !== "SWIMMING") scene.append(decoration("ground"));
-
-  scene.append(decoration("shadow"), picture(SPORT_IMAGES[sport], "figure"));
-
-  if (sport === "SWIMMING") {
-    for (let index = 1; index <= 4; index += 1) {
-      scene.append(decoration(`bubble bubble-${index}`));
-    }
-  }
-
-  if (sport === "STRENGTH") {
-    scene.append(decoration("spark spark-1"), decoration("spark spark-2"));
-  }
-
-  return scene;
-}
-
-function coachFigure() {
-  const figure = document.createElement("div");
-
-  figure.className = "coach-art";
-  figure.append(
-    picture("coach", "coach-head", "De Coach, een oude trainer"),
-    picture("glove", "coach-glove")
-  );
-
-  return figure;
+  return icon;
 }
 
 function art(name) {
@@ -106,64 +64,130 @@ function art(name) {
   if (name === "flame") return animatedPicture("fire", "flame-art");
   if (name === "trophy") return animatedPicture("trophy", "trophy-art");
   if (name === "party") return animatedPicture("party", "party-art");
-  if (name === "sleep") return animatedPicture("sleep", "sleep-art");
-  if (name === "calendar") return picture("calendar", "inline-icon");
-  if (name.startsWith("icon_")) return picture(SPORT_IMAGES[name.slice(5)], "sport-icon");
+  if (name === "calendar") return glyph("calendar", "inline-icon");
+  if (name === "map") return glyph("map", "inline-icon");
+  if (name === "sleep") return glyph("sleep", "sleep-art");
+  if (name.startsWith("icon_")) return glyph(SPORT_IMAGES[name.slice(5)], "sport-icon");
 
-  return sportScene(name);
+  return glyph(SPORT_IMAGES[name], "scene");
 }
 
-// A speech bubble that types its text while the Coach talks along.
+function coachFigure() {
+  const figure = document.createElement("div");
+
+  figure.className = "coach-art";
+  figure.append(glyph("coach"));
+
+  return figure;
+}
+
+// What the Coach says. say() replaces it, for example with an answer from the model.
 function coachDialog(text) {
-  const figure = art("coach");
   const line = document.createElement("p");
   const name = document.createElement("strong");
   const bubble = document.createElement("div");
   const dialog = document.createElement("section");
 
+  line.setAttribute("aria-live", "polite");
+  line.textContent = text;
   name.textContent = "Coach";
   bubble.className = "coach-message";
   bubble.append(name, line);
   dialog.className = "coach-dialog";
-  dialog.append(figure, bubble);
+  dialog.append(coachFigure(), bubble);
 
-  let typing = null;
+  return {
+    element: dialog,
+    say: (message) => { line.textContent = message; },
+  };
+}
 
-  const say = (message) => {
-    clearInterval(typing);
+// Leaflet is only loaded when someone asks for a map.
+let leafletLoading = null;
 
-    if (reducedMotion()) {
-      line.textContent = message;
-      return;
+function loadLeaflet() {
+  leafletLoading ??= new Promise((resolve, reject) => {
+    const style = document.createElement("link");
+    style.rel = "stylesheet";
+    style.href = "vendor/leaflet/leaflet.css";
+    document.head.append(style);
+
+    const script = document.createElement("script");
+    script.src = "vendor/leaflet/leaflet.js";
+    script.onload = () => resolve(window.L);
+    script.onerror = () => reject(new Error("De kaart kon niet laden"));
+    document.head.append(script);
+  });
+
+  return leafletLoading;
+}
+
+// With many routes, opens on where most of them start. One trip abroad should
+// not zoom the whole map out; that route is still there when you zoom out.
+function homeBounds(L, routes) {
+  if (routes.length < 2) return null;
+
+  const middle = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const latitude = middle(routes.map((route) => route.points[0][0]));
+  const longitude = middle(routes.map((route) => route.points[0][1]));
+
+  const nearby = routes.filter((route) =>
+    Math.abs(route.points[0][0] - latitude) < 0.6
+    && Math.abs(route.points[0][1] - longitude) < 0.9);
+
+  const bounds = L.latLngBounds([]);
+
+  for (const route of nearby) bounds.extend(route.points);
+
+  return bounds.isValid() ? bounds : null;
+}
+
+const MAP_ATTRIBUTION =
+  '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
+
+// Draws routes on a map. Each route is { points, label }.
+async function drawRoutes(element, routes, { markEnds = false } = {}) {
+  const L = await loadLeaflet();
+  const map = L.map(element, { scrollWheelZoom: false });
+
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: MAP_ATTRIBUTION,
+    referrerPolicy: "strict-origin-when-cross-origin",
+  }).addTo(map);
+
+  const bounds = L.latLngBounds([]);
+
+  for (const route of routes) {
+    const line = L.polyline(route.points, {
+      color: "#6E0D25",
+      weight: markEnds ? 4 : 3,
+      opacity: markEnds ? 0.95 : 0.55,
+    }).addTo(map);
+
+    if (route.label) {
+      // Set as text, so nothing in a label can become markup.
+      const label = document.createElement("span");
+      label.textContent = route.label;
+      line.bindPopup(label);
     }
 
-    // The untyped rest keeps its space, so the bubble does not grow while typing.
-    const typed = document.createTextNode("");
-    const untyped = document.createElement("span");
+    bounds.extend(line.getBounds());
+  }
 
-    untyped.className = "untyped";
-    untyped.textContent = message;
-    line.replaceChildren(typed, untyped);
-    dialog.classList.add("talking");
+  if (markEnds && routes[0]) {
+    const points = routes[0].points;
+    const dot = (point, fill) => L.circleMarker(point, {
+      radius: 6, color: "#FFFFFF", weight: 2, fillColor: fill, fillOpacity: 1,
+    }).addTo(map);
 
-    let shown = 0;
+    dot(points[0], "#00272B");
+    dot(points.at(-1), "#FAAA8D");
+  }
 
-    typing = setInterval(() => {
-      // Long answers should not keep the reader waiting.
-      shown += message.length > 200 ? 5 : 1;
-      typed.data = message.slice(0, shown);
-      untyped.textContent = message.slice(shown);
+  map.fitBounds(homeBounds(L, routes) ?? bounds, { padding: [20, 20] });
 
-      if (shown >= message.length) {
-        clearInterval(typing);
-        dialog.classList.remove("talking");
-      }
-    }, 20);
-  };
-
-  say(text);
-
-  return { element: dialog, say };
+  return map;
 }
 
 const CONFETTI_COLORS = ["#6E0D25", "#FAAA8D", "#AFD2E9", "#00272B", "#93A8AC"];
@@ -190,27 +214,4 @@ function confetti(pieces = 70) {
 
   document.body.append(layer);
   setTimeout(() => layer.remove(), 3800);
-}
-
-// Counts a number up from zero the first time it appears.
-function countUp(element, target, format) {
-  if (reducedMotion() || target <= 0) {
-    element.textContent = format(target);
-    return;
-  }
-
-  const startedAt = performance.now();
-  const length = 700;
-
-  const step = (now) => {
-    const progress = Math.min((now - startedAt) / length, 1);
-    const eased = 1 - (1 - progress) ** 3;
-
-    element.textContent = format(Math.round(target * eased));
-
-    if (progress < 1 && element.isConnected) requestAnimationFrame(step);
-  };
-
-  element.textContent = format(0);
-  requestAnimationFrame(step);
 }

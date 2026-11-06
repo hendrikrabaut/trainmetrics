@@ -29,6 +29,7 @@ def seeded_user(schema):
     with engine.begin() as connection:
         for table in (
             "sleep_nights",
+            "workout_routes",
             "plan_sessions",
             "training_plans",
             "polar_accounts",

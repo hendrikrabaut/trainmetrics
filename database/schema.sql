@@ -226,3 +226,15 @@ CREATE TABLE sleep_nights (
     PRIMARY KEY (user_id, night),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+
+-- ============================================
+-- ROUTES
+-- ============================================
+
+CREATE TABLE workout_routes (
+    workout_id INTEGER PRIMARY KEY,
+    points TEXT NOT NULL, -- JSON list of [latitude, longitude], simplified
+
+    FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+);

@@ -10,6 +10,7 @@ maakt. Plannen kun je zelf aanpassen en als iCal-bestand naar je agenda sturen.
 - **Trainingsplannen:** vaste regels in de backend, dus ze werken altijd
 - **Praten met de coach:** Ollama, op een andere computer in je netwerk
 - **Polar:** de AccessLink-API, plus import van FIT-, GPX- en TCX-bestanden
+- **Kaart:** Leaflet met tegels van OpenStreetMap, alleen als je erom vraagt
 
 ## Lokaal starten
 

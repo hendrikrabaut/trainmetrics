@@ -287,7 +287,6 @@ function barChart(title, rows, { x, y, format, columns, tip = (row) => `Week van
 
         root.append(svg("path", {
           class: "bar",
-          style: `--i:${index}`,
           d: `M${left},${baseline} V${top + radius} Q${left},${top} ${left + radius},${top}`
             + ` H${right - radius} Q${right},${top} ${right},${top + radius} V${baseline} Z`,
         }));
@@ -356,8 +355,7 @@ function lineChart(title, rows, { x, y, format, columns }) {
 
     root.append(svg("path", {
       class: "line",
-      pathLength: 1,
-      d: points.map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`).join(" "),
+            d: points.map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`).join(" "),
     }));
 
     const crosshair = svg("line", {
@@ -440,8 +438,7 @@ function xpBar(part, whole, label) {
 }
 
 function playerPanel() {
-  const total = h("span", { class: "level-total" });
-  countUp(total, game.xp, (value) => `${decimal(value, 0)} XP`);
+  const total = h("span", { class: "level-total" }, `${decimal(game.xp, 0)} XP`);
 
   return h("section", { class: "card level-card" },
     h("div", { class: "row spread" },
@@ -515,7 +512,6 @@ function showLevelUp(level, title) {
 
   const dialog = h("dialog", { class: "level-up", onclose: () => dialog.remove() },
     art("party"),
-    art("coach"),
     h("h2", {}, `Level ${level}!`),
     h("p", {}, `Je bent nu: ${title}. Niet naast je schoenen gaan lopen.`),
     h("button", { class: "primary", type: "button", onclick: close }, "Terug aan het werk")
@@ -594,6 +590,32 @@ function distanceEditor(workout) {
   );
 }
 
+// Asks first, because the map tiles tell OpenStreetMap which area you look at.
+function routeButton(workout) {
+  const holder = h("div", {});
+
+  const show = async () => {
+    const element = h("div", { class: "route-map" });
+    holder.replaceChildren(element);
+
+    try {
+      const route = await api(`/api/workouts/${workout.id}/route`);
+      await drawRoutes(element, [{ points: route.points }], { markEnds: true });
+    } catch (error) {
+      holder.replaceChildren(message(error.message, true));
+    }
+  };
+
+  holder.append(h("button", {
+    class: "small",
+    type: "button",
+    style: "margin-bottom:10px",
+    onclick: show,
+  }, art("map"), "Toon route op kaart"));
+
+  return holder;
+}
+
 function workoutRow(workout, onChange) {
   const activity = workout.endurance_activity;
   const sport = workoutSport(workout);
@@ -633,6 +655,7 @@ function workoutRow(workout, onChange) {
     ),
     h("div", { class: "workout-body" },
       details.length > 0 && h("p", {}, details.join(" · ")),
+      workout.has_route && routeButton(workout),
       workout.exercises.length > 0 && h("ul", {},
         workout.exercises.map((item) =>
           h("li", {}, `${item.exercise.name}: `,
@@ -906,6 +929,54 @@ function sleepPanel(sleep) {
     })),
     recovery && h("p", { class: "muted", style: "margin:12px 0 0" },
       `Je herstel is een schatting van deze app, niet de Nightly Recharge van Polar: je laatste nacht (${recovery.hrv_ms} ms) tegenover je eigen normaal van ${recovery.baseline_nights} nachten (${recovery.baseline_ms} ms), samen met je slaapscore. Het is geen medisch advies.`)
+  );
+}
+
+function routesPanel() {
+  const body = h("div", {});
+  const sports = h("select", { "aria-label": "Sport", style: "width:auto" },
+    h("option", { value: "" }, "Alle sporten"),
+    ["RUNNING", "CYCLING", "SWIMMING", "OTHER"].map((sport) => h("option", { value: sport }, SPORTS[sport]))
+  );
+
+  const show = async () => {
+    const element = h("div", { class: "route-map large" });
+    const note = h("p", { class: "muted", style: "margin:0" });
+    body.replaceChildren(element, note);
+
+    try {
+      const query = sports.value ? `&sport=${sports.value}` : "";
+      const routes = await api(`/api/routes?user_id=${userId}${query}`);
+
+      if (!routes.length) {
+        body.replaceChildren(h("p", { class: "muted" }, "Geen routes voor deze sport."));
+        return;
+      }
+
+      note.textContent = `${routes.length} ${routes.length === 1 ? "route" : "routes"}. De kaart opent waar je het meest traint; zoom uit voor de rest. Klik op een lijn om te zien welke training het was.`;
+
+      await drawRoutes(element, routes.map((route) => ({
+        points: route.points,
+        label: `${SPORTS[route.sport]}, ${dayLabel(route.date)}`,
+      })));
+    } catch (error) {
+      body.replaceChildren(message(error.message, true));
+    }
+  };
+
+  body.append(
+    h("p", { class: "muted" }, "De kaart komt van OpenStreetMap en laadt pas als je erom vraagt, want die dienst ziet dan welk gebied je bekijkt. Je trainingen zelf blijven bij jou.")
+  );
+
+  return h("section", { class: "card" },
+    h("div", { class: "row spread", style: "margin-bottom:12px" },
+      h("h2", { style: "margin:0" }, "Routes"),
+      h("div", { class: "row" },
+        sports,
+        h("button", { class: "primary small", type: "button", onclick: show }, art("map"), "Toon op kaart")
+      )
+    ),
+    body
   );
 }
 
@@ -1584,7 +1655,7 @@ function sportDetail(row) {
 
   return h("div", {},
     h("div", { class: "row", style: "margin-bottom:10px;gap:10px" },
-      h("div", { class: "scene-chip", style: "width:110px" }, art(row.sport)),
+      h("div", { class: "scene-chip" }, art(row.sport)),
       h("p", { class: "trend", style: "margin:0;flex:1;min-width:180px" }, sportTrend(row))
     ),
     h("div", { class: "tiles" }, tiles),
@@ -1731,6 +1802,7 @@ async function statisticsView() {
     ),
     weeklyPanel(weeks),
     sportPanel(),
+    routesPanel(),
     fitness && h("section", { class: "card" },
       lineChart("Fitheid, laatste 90 dagen", estimate.fitness_series, {
         x: (row) => row.date,
@@ -2113,13 +2185,19 @@ async function profileView() {
     sync,
     manage,
     h("p", { class: "muted" },
-      "Afbeeldingen: ",
+      "Pictogrammen: ",
+      h("a", { href: "https://phosphoricons.com", target: "_blank", rel: "noreferrer" }, "Phosphor"),
+      " (MIT). Beloningen: ",
       h("a", { href: "https://github.com/microsoft/fluentui-emoji", target: "_blank", rel: "noreferrer" }, "Fluent Emoji"),
       " van Microsoft (MIT) en ",
       h("a", { href: "https://googlefonts.github.io/noto-emoji-animation/", target: "_blank", rel: "noreferrer" }, "Noto Animated Emoji"),
       " van Google (",
       h("a", { href: "https://creativecommons.org/licenses/by/4.0/", target: "_blank", rel: "noreferrer" }, "CC BY 4.0"),
-      ")."),
+      "). Kaart: ",
+      h("a", { href: "https://leafletjs.com", target: "_blank", rel: "noreferrer" }, "Leaflet"),
+      " en © ",
+      h("a", { href: "https://www.openstreetmap.org/copyright", target: "_blank", rel: "noreferrer" }, "OpenStreetMap"),
+      "-bijdragers."),
   ];
 }
 

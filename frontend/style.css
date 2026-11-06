@@ -305,7 +305,6 @@ main {
   height: 100%;
   background: var(--wine);
   border-radius: 999px;
-  transition: width 0.4s ease-out;
 }
 
 .xp-gain {
@@ -595,7 +594,6 @@ th { font-size: 0.85rem; font-weight: 650; color: var(--text-secondary); }
   background: var(--peach);
   border-radius: 10px;
   box-shadow: 0 6px 20px rgb(0 39 43 / 0.25);
-  animation: toast-in 0.2s ease-out;
 }
 
 @keyframes toast-in {
@@ -675,181 +673,73 @@ details.form-toggle > summary, details.week > summary {
 
 details.form-toggle[open] > summary { margin-bottom: 12px; }
 
-/* ---------- pictures ---------- */
+/* ---------- icons ---------- */
 
-.untyped { visibility: hidden; }
+.glyph {
+  display: inline-block;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
 
 .coach-dialog { align-items: center; }
 
-.coach-art { position: relative; flex: none; width: 76px; height: 76px; }
-
-.coach-head {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  transform-origin: 50% 90%;
-  animation: coach-idle 3.6s ease-in-out infinite;
-  filter: drop-shadow(0 3px 4px rgb(0 20 23 / 0.3));
-}
-
-.coach-glove {
-  position: absolute;
-  right: -7px;
-  bottom: -3px;
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  transform: rotate(-24deg);
-  transform-origin: 80% 90%;
-  animation: glove-idle 3.6s ease-in-out infinite;
-  filter: drop-shadow(0 2px 3px rgb(0 20 23 / 0.35));
-}
-
-.talking .coach-head { animation: coach-talk 0.42s ease-in-out infinite alternate; }
-.talking .coach-glove { animation: glove-punch 0.42s ease-in-out infinite alternate; }
-
-@keyframes coach-idle { 50% { transform: translateY(-3px) rotate(-2deg); } }
-@keyframes coach-talk { from { transform: rotate(-3deg) translateY(0); } to { transform: rotate(3deg) translateY(-3px); } }
-@keyframes glove-idle { 50% { transform: rotate(-16deg) translateY(-2px); } }
-@keyframes glove-punch { from { transform: rotate(-30deg) translate(0, 0); } to { transform: rotate(-8deg) translate(5px, -7px) scale(1.08); } }
-
-.hero-top { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 12px; align-items: center; }
-
-/* A stage for one sport. Everything is placed in percentages so it scales. */
-.scene { position: relative; width: 100%; aspect-ratio: 1 / 0.86; overflow: hidden; border-radius: 12px; }
-
-.scene .figure { position: absolute; left: 13%; bottom: 7%; width: 74%; height: auto; z-index: 2; filter: drop-shadow(0 6px 8px rgb(0 20 23 / 0.35)); }
-
-.scene .glow {
-  position: absolute;
-  left: 8%;
-  top: 2%;
-  width: 84%;
-  aspect-ratio: 1;
+.coach-art {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  color: var(--peach);
+  background: var(--wine);
   border-radius: 50%;
-  background: radial-gradient(circle, rgb(250 170 141 / 0.42), rgb(110 13 37 / 0.28) 55%, transparent 72%);
-  animation: glow 3s ease-in-out infinite;
 }
 
-.scene .ground {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 8%;
-  height: 3px;
-  z-index: 1;
-  background: repeating-linear-gradient(90deg, var(--steel) 0 22px, transparent 22px 40px);
-  animation: road 0.5s linear infinite;
+.coach-art .glyph { width: 26px; height: 26px; }
+
+.hero-top { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: center; }
+
+.scene { display: block; width: 100%; aspect-ratio: 1; color: var(--peach); }
+
+.sport-mark .sport-icon { width: 22px; height: 22px; }
+
+.sport-mark.RUNNING, .sport-mark.OTHER { color: var(--deep); background: var(--sky); }
+.sport-mark.CYCLING { color: var(--deep); background: var(--peach); }
+.sport-mark.SWIMMING { color: var(--on-dark); background: var(--deep); }
+.sport-mark.STRENGTH { color: var(--on-dark); background: var(--wine); }
+
+.sport-card .sport-icon { width: 22px; height: 22px; }
+
+.inline-icon { width: 20px; height: 20px; margin-right: 8px; vertical-align: -4px; }
+
+.sleep-art { width: 44px; height: 44px; color: var(--wine); }
+
+.scene-chip { display: grid; place-items: center; width: 56px; height: 56px; color: var(--peach); background: var(--deep); border-radius: 14px; }
+
+.scene-chip .scene { width: 34px; }
+
+@media (max-width: 560px) {
+  .hero-top { grid-template-columns: minmax(0, 1fr) 76px; }
 }
 
-.scene .shadow {
-  position: absolute;
-  left: 25%;
-  bottom: 4%;
-  width: 50%;
-  height: 7%;
-  z-index: 1;
-  border-radius: 50%;
-  background: rgb(0 20 23 / 0.55);
-  animation: shadow 0.42s ease-in-out infinite alternate;
-}
-
-.speed-line { position: absolute; z-index: 1; height: 3px; border-radius: 3px; background: var(--sky); opacity: 0; animation: speed 0.8s linear infinite; }
-.speed-line-1 { top: 28%; width: 26%; animation-delay: 0s; }
-.speed-line-2 { top: 47%; width: 36%; animation-delay: 0.27s; }
-.speed-line-3 { top: 66%; width: 20%; animation-delay: 0.53s; }
-
-.scene-running .figure { animation: run 0.42s ease-in-out infinite alternate; }
-
-.scene-cycling .figure { left: 9%; width: 82%; animation: ride 0.9s ease-in-out infinite alternate; }
-.scene-cycling .ground { animation-duration: 0.3s; }
-.scene-cycling .speed-line { animation-duration: 0.55s; }
-.scene-cycling .shadow { width: 64%; left: 18%; animation: none; }
-
-.scene-swimming .figure { bottom: 3%; animation: swim 2.2s ease-in-out infinite alternate; transform-origin: 50% 70%; }
-.scene-swimming .shadow { display: none; }
-
-.bubble { position: absolute; z-index: 3; width: 9px; height: 9px; bottom: 16%; border: 2px solid var(--sky); border-radius: 50%; opacity: 0; animation: bubble 2.4s ease-in infinite; }
-.bubble-1 { left: 18%; }
-.bubble-2 { left: 38%; width: 6px; height: 6px; animation-delay: 0.7s; }
-.bubble-3 { left: 66%; animation-delay: 1.3s; }
-.bubble-4 { left: 82%; width: 6px; height: 6px; animation-delay: 1.9s; }
-
-.scene-strength .ground { animation: none; background: var(--steel); left: 12%; right: 12%; }
-.scene-strength .figure { transform-origin: 50% 100%; animation: lift 1.8s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
-.scene-strength .shadow { animation: shadow-lift 1.8s ease-in-out infinite; }
-
-.spark { position: absolute; z-index: 3; top: 12%; width: 8px; height: 8px; background: var(--peach); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: spark 1.8s ease-out infinite; }
-.spark-1 { left: 10%; }
-.spark-2 { right: 10%; animation-delay: 0.12s; }
-
-.scene-other .backdrop { position: absolute; left: 32%; bottom: 8%; width: 66%; opacity: 0.55; animation: drift 7s ease-in-out infinite alternate; }
-.scene-other .figure { left: 4%; width: 64%; animation: walk 0.75s ease-in-out infinite alternate; }
-.scene-other .ground { animation-duration: 1.4s; }
-.scene-other .shadow { left: 10%; width: 44%; }
-
-@keyframes glow { 50% { transform: scale(1.07); opacity: 0.8; } }
-@keyframes road { to { background-position: -40px 0; } }
-@keyframes shadow { to { transform: scaleX(0.82); opacity: 0.7; } }
-@keyframes speed { 0% { left: 86%; opacity: 0; } 18% { opacity: 0.8; } 100% { left: -36%; opacity: 0; } }
-@keyframes run { from { transform: translateY(0) rotate(-1.5deg); } to { transform: translateY(-9px) rotate(2deg); } }
-@keyframes ride { from { transform: translateY(0) rotate(-0.8deg); } to { transform: translateY(-3px) rotate(0.8deg); } }
-@keyframes swim { from { transform: translate(-4px, 2px) rotate(-3deg); } to { transform: translate(5px, -5px) rotate(3deg); } }
-@keyframes bubble { 0% { transform: translateY(0) scale(0.7); opacity: 0; } 25% { opacity: 0.9; } 100% { transform: translateY(-110px) scale(1.2); opacity: 0; } }
-@keyframes lift { 0%, 100% { transform: translateY(9%) scale(1.05, 0.84); } 45%, 60% { transform: translateY(-5%) scale(0.98, 1.05); } }
-@keyframes shadow-lift { 45%, 60% { transform: scaleX(0.8); opacity: 0.6; } }
-@keyframes spark { 0%, 38% { transform: scale(0); opacity: 0; } 50% { transform: scale(1.6) rotate(45deg); opacity: 1; } 70%, 100% { transform: scale(0) rotate(90deg); opacity: 0; } }
-@keyframes drift { to { transform: translateX(-12px); } }
-@keyframes walk { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(-4px) rotate(1deg); } }
-
-.sport-mark { overflow: hidden; }
-.sport-mark .sport-icon { width: 30px; height: 30px; object-fit: contain; }
-.sport-mark.STRENGTH, .sport-mark.CYCLING, .sport-mark.SWIMMING, .sport-mark.OTHER, .sport-mark.RUNNING { background: var(--soft); }
-
-.sport-card .sport-icon { width: 30px; height: 30px; object-fit: contain; }
-
-.inline-icon { width: 22px; height: 22px; margin-right: 8px; vertical-align: -5px; }
+/* ---------- rewards: the only things that move ---------- */
 
 .flame-art { width: 22px; height: 22px; vertical-align: -5px; margin-right: 4px; }
 
-.trophy-art { display: block; width: 104px; height: 104px; margin-bottom: 8px; }
+.trophy-art { display: block; width: 96px; height: 96px; margin-bottom: 8px; }
 
-.party-art { display: block; width: 90px; height: 90px; margin: 0 auto 8px; }
-
-/* ---------- page motion ---------- */
-
-#app > * { animation: rise 0.34s ease-out both; }
-#app > *:nth-child(2) { animation-delay: 0.05s; }
-#app > *:nth-child(3) { animation-delay: 0.1s; }
-#app > *:nth-child(4) { animation-delay: 0.15s; }
-#app > *:nth-child(n + 5) { animation-delay: 0.2s; }
-
-@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
-
-.level-card .xp-fill, .quest .xp-fill { animation: fill 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: left; }
-
-@keyframes fill { from { transform: scaleX(0); } }
-
-.week-mark.done { animation: pop 0.4s cubic-bezier(0.3, 1.6, 0.6, 1) both; }
-
-.badge.earned .medal { animation: pop 0.5s cubic-bezier(0.3, 1.6, 0.6, 1) both; }
-.badge.earned:hover .medal { animation: wobble 0.5s ease-in-out; }
-
-@keyframes pop { from { transform: scale(0); } }
-@keyframes wobble { 25% { transform: rotate(-10deg); } 75% { transform: rotate(10deg); } }
-
-.workout-row summary:hover .sport-mark { animation: wobble 0.4s ease-in-out; }
-
-.card { transition: box-shadow 0.2s, transform 0.2s; }
-button, .button { transition: transform 0.12s, filter 0.12s, background 0.12s; }
-button:active, .button:active { transform: scale(0.96); }
+.party-art { display: block; width: 96px; height: 96px; margin: 0 auto 10px; }
 
 .toast { animation: toast-in 0.35s cubic-bezier(0.3, 1.6, 0.6, 1); }
 
 dialog.level-up[open] { animation: pop 0.45s cubic-bezier(0.3, 1.6, 0.6, 1); }
-dialog.level-up .coach-art { width: 96px; height: 96px; margin: 0 auto 10px; }
-dialog.level-up .coach-glove { width: 46px; height: 46px; }
+
+dialog.level-up .coach-art { display: none; }
+
+.badge.earned .medal { animation: pop 0.5s cubic-bezier(0.3, 1.6, 0.6, 1) both; }
+
+@keyframes pop { from { transform: scale(0); } }
 
 .confetti { position: fixed; inset: 0; z-index: 2147483647; overflow: hidden; pointer-events: none; }
 
@@ -866,14 +756,25 @@ dialog.level-up .coach-glove { width: 46px; height: 46px; }
   to { transform: translate(var(--drift), 105vh) rotate(var(--spin)); opacity: 0.7; }
 }
 
-/* Charts build up when they appear. */
-.chart .bar { transform-box: fill-box; transform-origin: bottom; animation: bar-up 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 22ms); }
-.chart .line { stroke-dasharray: 1; animation: draw 1s ease-out both; }
-.chart .point { animation: fade 0.3s 0.7s both; }
+/* ---------- maps ---------- */
 
-@keyframes bar-up { from { transform: scaleY(0); } }
-@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-@keyframes fade { from { opacity: 0; } }
+.route-map {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+  width: 100%;
+  height: 300px;
+  margin: 10px 0;
+  overflow: hidden;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.route-map.large { height: 460px; }
+
+/* A quiet map, so the route is what stands out. */
+.route-map .leaflet-tile-pane { filter: grayscale(0.9) contrast(0.92) brightness(1.03); }
 
 /* ---------- plan editing ---------- */
 
@@ -954,7 +855,7 @@ dialog.level-up .coach-glove { width: 46px; height: 46px; }
 
 .sport-card .share { height: 5px; margin-top: 6px; overflow: hidden; background: var(--soft); border-radius: 999px; }
 
-.sport-card .share i { display: block; height: 100%; background: var(--wine); border-radius: 999px; animation: fill 0.8s ease-out both; transform-origin: left; }
+.sport-card .share i { display: block; height: 100%; background: var(--wine); border-radius: 999px; }
 
 .sport-card[aria-pressed="true"] .share { background: rgb(255 255 255 / 0.2); }
 .sport-card[aria-pressed="true"] .share i { background: var(--peach); }
@@ -985,8 +886,6 @@ dialog.level-up .coach-glove { width: 46px; height: 46px; }
 /* ---------- sleep ---------- */
 
 .night-card { display: flex; align-items: center; gap: 14px; }
-
-.sleep-art { display: block; flex: none; width: 58px; height: 58px; }
 
 .recovery-pill {
   display: inline-block;

@@ -1,8 +1,9 @@
-from sqlalchemy import ForeignKey, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey, Integer, String, exists
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from app.database import Base
 from app.models.equipment import Equipment, workout_equipment
+from app.models.workout_route import WorkoutRoute
 
 
 class Workout(Base):
@@ -40,3 +41,9 @@ class Workout(Base):
     equipment: Mapped[list[Equipment]] = relationship(
         secondary=workout_equipment,
     )
+
+
+# Lets a list of workouts say which have a route, without loading the routes.
+Workout.has_route = column_property(
+    exists().where(WorkoutRoute.workout_id == Workout.id)
+)

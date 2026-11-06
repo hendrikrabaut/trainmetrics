@@ -168,8 +168,11 @@ Goed om te weten:
 - Slaap en herstel haalt de API op tot 28 dagen terug. Laat de sync dus regelmatig
   lopen, anders mis je nachten.
 - Je horloge moet eerst synchroniseren met Polar Flow.
-- De sleutel voor Polar staat in de database, en dus ook in je back-ups. Behandel
-  die back-ups als privé.
+- De sleutel voor Polar en je routes staan in de database, en dus ook in je
+  back-ups. Je routes tonen waar je woont, dus behandel die back-ups als privé.
+- De kaart gebruikt tegels van OpenStreetMap en laadt pas als je op de knop klikt.
+  OpenStreetMap ziet dan je IP-adres en welk gebied je bekijkt, maar krijgt je
+  routes niet. Zonder internet zie je de lijn zonder kaart eronder.
 
 ## Updaten
 
