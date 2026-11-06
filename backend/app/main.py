@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import models
 from app.routes.analytics import router as analytics_router
+from app.routes.calendar import router as calendar_router
 from app.routes.coach import router as coach_router
 from app.routes.equipment import router as equipment_router
 from app.routes.game import router as game_router
@@ -57,6 +58,7 @@ app.include_router(body_measurements_router)
 app.include_router(equipment_router)
 app.include_router(analytics_router)
 app.include_router(imports_router)
+app.include_router(calendar_router)
 app.include_router(coach_router)
 app.include_router(game_router)
 app.include_router(plans_router)

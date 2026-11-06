@@ -602,7 +602,7 @@ def test_two_runs_on_a_day_keep_their_own_calendar_entry(client):
     _extra(client, title="Ochtend")
     _extra(client, title="Avond")
 
-    text = _unfold(client.get("/api/plans/active/calendar.ics").text)
+    text = _unfold(client.get("/api/calendar.ics").text)
     uids = [line for line in text.split("\r\n") if line.startswith("UID:")]
 
     assert len(uids) == len(set(uids))
@@ -640,11 +640,11 @@ def _unfold(text):
 def test_calendar_export_is_valid_ical(client):
     plan = _plan(client, goal="10K", weeks=2, sessions_per_week=2)
 
-    response = client.get("/api/plans/active/calendar.ics")
+    response = client.get("/api/calendar.ics")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/calendar")
-    assert "trainmetrics-plan.ics" in response.headers["content-disposition"]
+    assert "attachment" not in response.headers.get("content-disposition", "")
 
     raw = response.text
     text = _unfold(raw)
@@ -672,7 +672,7 @@ def test_calendar_escapes_text_and_folds_long_accents(client):
         json={"title": "Kracht; been, rug", "description": "é" * 200},
     )
 
-    raw = client.get("/api/plans/active/calendar.ics").content
+    raw = client.get("/api/calendar.ics").content
     assert all(len(line) <= 75 for line in raw.split(b"\r\n"))
 
     text = _unfold(raw.decode("utf-8"))
@@ -681,16 +681,42 @@ def test_calendar_escapes_text_and_folds_long_accents(client):
     assert "é" * 200 in text
 
 
-def test_calendar_without_a_plan(client):
-    assert client.get("/api/plans/active/calendar.ics").status_code == 404
+def test_a_subscription_stays_valid_without_a_plan(client):
+    response = client.get("/api/calendar.ics")
+    text = _unfold(response.text)
+
+    assert response.status_code == 200
+    assert text.startswith("BEGIN:VCALENDAR")
+    assert text.endswith("END:VCALENDAR\r\n")
+    assert "BEGIN:VEVENT" not in text
+
+
+def test_a_subscription_asks_to_be_refreshed_and_is_not_a_download(client):
+    response = client.get("/api/calendar.ics")
+
+    assert "REFRESH-INTERVAL;VALUE=DURATION:PT1H" in response.text
+    assert "X-PUBLISHED-TTL:PT1H" in response.text
+    assert response.headers["cache-control"] == "no-cache"
+
+
+def test_the_same_address_follows_a_new_plan(client):
+    _plan(client, goal="10K", weeks=2, sessions_per_week=2)
+    first = client.get("/api/calendar.ics").text
+
+    plan = _plan(client, goal="5K", weeks=3, sessions_per_week=3)
+    second = _unfold(client.get("/api/calendar.ics").text)
+
+    assert second != first
+    assert second.count("BEGIN:VEVENT") == plan["total"]
+    assert "X-WR-CALNAME:TrainMetrics" in second
 
 
 def test_calendar_uids_survive_rescheduling_on_the_same_day(client):
     _plan(client, goal="10K", weeks=2, weekdays=[1, 6])
-    before = _unfold(client.get("/api/plans/active/calendar.ics").text)
+    before = _unfold(client.get("/api/calendar.ics").text)
 
     client.put("/api/plans/active/schedule", json={"weekdays": [1, 6]})
-    after = _unfold(client.get("/api/plans/active/calendar.ics").text)
+    after = _unfold(client.get("/api/calendar.ics").text)
 
     uids = lambda text: sorted(l for l in text.split("\r\n") if l.startswith("UID:"))
 

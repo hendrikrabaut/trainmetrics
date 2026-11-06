@@ -174,6 +174,24 @@ Goed om te weten:
   OpenStreetMap ziet dan je IP-adres en welk gebied je bekijkt, maar krijgt je
   routes niet. Zonder internet zie je de lijn zonder kaart eronder.
 
+## 8. Buitenshuis en agenda-abonnement
+
+Met [Tailscale](https://tailscale.com/) bereik je de app overal, zonder iets open te
+zetten op je router:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+sudo tailscale serve --bg 8000
+```
+
+Installeer Tailscale ook op je telefoon en laptop, met hetzelfde account. De app
+staat dan op `https://<naam-van-de-pi>.<jouw-tailnet>.ts.net`.
+
+Het agenda-abonnement staat onder **Plan › Schema**. Zet in de Tailscale-app VPN On
+Demand aan, en kies op een Mac als locatie *Op mijn Mac*, niet iCloud: de servers
+van Apple kunnen je Pi niet bereiken.
+
 ## Updaten
 
 ```bash

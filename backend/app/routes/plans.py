@@ -1,7 +1,7 @@
 from datetime import date as Date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -148,22 +148,6 @@ def change_schedule(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
     return plans.plan_view(db, plan)
-
-
-@router.get("/active/calendar.ics")
-def export_calendar(
-    user_id: int = Depends(get_user_id),
-    db: Session = Depends(get_db),
-):
-    plan = _active_or_404(db, user_id)
-
-    return Response(
-        plans.plan_to_ical(plan),
-        media_type="text/calendar; charset=utf-8",
-        headers={
-            "Content-Disposition": 'attachment; filename="trainmetrics-plan.ics"',
-        },
-    )
 
 
 @router.post("/sessions")

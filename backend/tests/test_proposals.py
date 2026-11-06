@@ -307,7 +307,7 @@ def test_an_approved_plan_works_like_any_other(client, model):
     row = next(s for s in client.get("/api/plans/active").json()["sessions"] if s["date"] == TODAY.isoformat())
     assert row["completed"] is True
 
-    assert client.get("/api/plans/active/calendar.ics").status_code == 200
+    assert client.get("/api/calendar.ics").status_code == 200
 
 
 # The checks

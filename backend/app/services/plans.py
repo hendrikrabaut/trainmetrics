@@ -847,7 +847,9 @@ def _ical_line(line: str) -> str:
     return "\r\n ".join(parts)
 
 
-def plan_to_ical(plan: TrainingPlan, now: datetime | None = None) -> str:
+def plan_to_ical(plan: TrainingPlan | None, now: datetime | None = None) -> str:
+    """A calendar to subscribe to. Without a plan it is valid and empty, because
+    an error would make a calendar app drop or complain about the subscription."""
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
 
     lines = [
@@ -856,12 +858,15 @@ def plan_to_ical(plan: TrainingPlan, now: datetime | None = None) -> str:
         "PRODID:-//TrainMetrics//Trainingsplan//NL",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
-        f"X-WR-CALNAME:{_ical_text('TrainMetrics: ' + GOAL_NAMES[plan.goal])}",
+        "X-WR-CALNAME:TrainMetrics",
+        # A hint for how often to look again. The calendar app has the last word.
+        "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+        "X-PUBLISHED-TTL:PT1H",
     ]
 
     used_uids = {}
 
-    for session in plan.sessions:
+    for session in plan.sessions if plan else []:
         day = parse_day(session.date)
         uid = f"plan-{plan.id}-{day:%Y%m%d}-{session.sport.lower()}"
 

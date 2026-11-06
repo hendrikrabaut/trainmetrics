@@ -135,6 +135,45 @@ function schedulePanel(plan) {
   );
 }
 
+function calendarSubscription() {
+  const address = `${location.origin}/api/calendar.ics`;
+  const subscribe = address.replace(/^https:/, "webcals:").replace(/^http:/, "webcal:");
+  const field = h("input", { value: address, readonly: true, "aria-label": "Adres van de agenda" });
+  const copied = h("span", { class: "muted", "aria-live": "polite" });
+
+  return h("section", { class: "card" },
+    h("h2", {}, "Agenda-abonnement"),
+    h("p", {}, "Abonneer je één keer: je plan blijft daarna vanzelf bijgewerkt in je agenda, ook als je het verandert."),
+    h("div", { class: "row", style: "margin-bottom:10px" },
+      h("a", { class: "button primary", href: subscribe }, art("calendar"), "Abonneer in Apple Agenda"),
+      h("button", {
+        class: "small",
+        type: "button",
+        onclick: async () => {
+          field.select();
+
+          try {
+            await navigator.clipboard.writeText(address);
+            copied.textContent = "Gekopieerd";
+          } catch {
+            copied.textContent = "Kopieer het adres hierboven zelf";
+          }
+        },
+      }, "Kopieer adres"),
+      copied
+    ),
+    field,
+    h("details", {},
+      h("summary", {}, "Hoe stel ik dit in?"),
+      h("ul", { class: "highlights" },
+        h("li", {}, h("b", {}, "iPhone: "), "ga naar Instellingen › Apps › Agenda › Agenda-accounts › Voeg account toe › Andere › Voeg agenda-abonnement toe, en plak het adres. De naam van de menu's kan per iOS-versie iets verschillen."),
+        h("li", {}, h("b", {}, "Mac: "), "kies in Agenda Archief › Nieuw agenda-abonnement, plak het adres en kies als locatie Op mijn Mac, niet iCloud. Zet Vernieuwen automatisch op elk uur."),
+        h("li", {}, h("b", {}, "Buitenshuis: "), "zet in de Tailscale-app VPN On Demand aan, anders kan je agenda de Pi niet bereiken en blijft hij de laatste versie tonen.")
+      )
+    )
+  );
+}
+
 function weekSummary(week) {
   const parts = [
     PHASE_LABELS[week.phase],
@@ -169,13 +208,6 @@ function planPanel(plan) {
       `${dayLabel(plan.start_date)} tot ${dayLabel(plan.end_date)}. Een training telt mee als je die sport in dezelfde week doet.`),
     xpBar(plan.completed, plan.total, "Voortgang van het plan"),
     plan.warning && h("div", { class: "message", style: "margin-top:12px" }, plan.warning),
-    h("div", { class: "row", style: "margin-top:12px" },
-      h("a", {
-        class: "button",
-        href: `/api/plans/active/calendar.ics`,
-        download: "trainmetrics-plan.ics",
-      }, art("calendar"), "Zet in je agenda (.ics)")
-    ),
     h("div", { style: "margin-top:12px" },
       [...weeks.entries()].map(([week, sessions]) =>
         h("details", { class: "week", open: week === currentWeek },
@@ -228,6 +260,7 @@ export async function coachView() {
       addSessionForm(localNow().slice(0, 10))
     ),
     plan && schedulePanel(plan),
+    calendarSubscription(),
   ];
 
   const coachTab = [
