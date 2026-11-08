@@ -57,8 +57,45 @@ def test_coach_sends_calculated_data_and_cleans_the_answer(client, fake_ollama):
     assert path == "/api/chat"
     assert payload["model"] == "test-model"
     assert payload["stream"] is False
+    assert payload["think"] is False
     assert "90.4" in prompt
     assert "Hoe gaat het?" in prompt
+
+
+def test_a_model_without_thinking_is_asked_again_without_the_setting(client, monkeypatch):
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            received.append(payload)
+
+            if "think" in payload:
+                status, body = 400, {"error": '"test-model" does not support thinking'}
+            else:
+                status, body = 200, {"message": {"content": "Prima."}}
+
+            answer = json.dumps(body).encode()
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(answer)))
+            self.end_headers()
+            self.wfile.write(answer)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("OLLAMA_URL", f"http://127.0.0.1:{server.server_port}")
+
+    try:
+        response = client.post("/api/coach/ask", json={"question": "Hallo"})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert response.json() == {"answer": "Prima."}
+    assert len(received) == 2
 
 
 def test_coach_reports_when_ollama_is_unreachable(client, monkeypatch):

@@ -81,11 +81,33 @@ sudo systemctl start trainmetrics
 
 ## 5. De coach op de laptop
 
-Installeer [Ollama](https://ollama.com/download) en haal een model op:
+Installeer [Ollama](https://ollama.com/download) en haal een model op. Met 16 GB
+werkgeheugen past `qwen3:8b`, met 8 GB neem je `qwen3:4b`:
 
 ```bash
-ollama pull qwen3:4b
+ollama pull qwen3:8b
 ```
+
+### Windows
+
+Laat Ollama luisteren op het netwerk en start het daarna opnieuw via het pictogram
+bij de klok:
+
+```powershell
+setx OLLAMA_HOST 0.0.0.0
+```
+
+Laat in de firewall alleen je Tailscale-toestellen toe (PowerShell als
+administrator), en weiger het venster van Windows dat Ollama netwerktoegang vraagt:
+
+```powershell
+New-NetFirewallRule -DisplayName "Ollama via Tailscale" -Direction Inbound -Protocol TCP -LocalPort 11434 -RemoteAddress 100.64.0.0/10 -Action Allow
+```
+
+Zet in `backend/.env` op de Pi `OLLAMA_URL=http://<naam-van-de-laptop>:11434`, met
+de naam die Tailscale de laptop geeft.
+
+### Linux
 
 Laat Ollama luisteren op je netwerk, zodat de Pi erbij kan:
 

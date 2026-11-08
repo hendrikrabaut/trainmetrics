@@ -102,23 +102,38 @@ def build_context(db: Session, user_id: int) -> dict:
     }
 
 
-def _chat(messages: list[dict], response_format=None, timeout: float | None = None) -> str:
-    url, model, default_timeout = _settings()
-
-    payload = {"model": model, "stream": False, "messages": messages}
-
-    if response_format is not None:
-        payload["format"] = response_format
-
+def _send(url: str, payload: dict, timeout: float) -> str:
     request = urllib.request.Request(
         f"{url}/api/chat",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
 
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.load(response)["message"]["content"]
+
+
+def _chat(messages: list[dict], response_format=None, timeout: float | None = None) -> str:
+    url, model, default_timeout = _settings()
+    timeout = timeout or default_timeout
+
+    # Reasoning first is many times slower on a laptop processor, and the
+    # backend has already done the thinking that matters: the calculations.
+    payload = {"model": model, "stream": False, "think": False, "messages": messages}
+
+    if response_format is not None:
+        payload["format"] = response_format
+
     try:
-        with urllib.request.urlopen(request, timeout=timeout or default_timeout) as response:
-            answer = json.load(response)["message"]["content"]
+        try:
+            answer = _send(url, payload, timeout)
+        except urllib.error.HTTPError as error:
+            # A model without a thinking mode refuses the setting altogether.
+            if error.code != 400 or "think" not in error.read().decode("utf-8", "replace"):
+                raise
+
+            del payload["think"]
+            answer = _send(url, payload, timeout)
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise CoachUnavailable(str(error)) from error
 
