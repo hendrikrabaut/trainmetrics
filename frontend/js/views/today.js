@@ -35,7 +35,7 @@ function coachLine(next, estimate, sleep) {
   return "Alle quests binnen deze week. Niet slecht. Niet naast je schoenen gaan lopen.";
 }
 
-function weekDays() {
+export function weekDays() {
   const today = new Date();
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
@@ -47,13 +47,13 @@ function weekDays() {
   });
 }
 
-function nextSession(plan) {
+export function nextSession(plan) {
   const today = localNow().slice(0, 10);
 
   return plan?.sessions.find((session) => !session.completed && session.date >= today) ?? null;
 }
 
-function whenLabel(date) {
+export function whenLabel(date) {
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
@@ -211,7 +211,7 @@ const RECHARGE_LABELS = {
   6: "Zeer goed",
 };
 
-function recoveryLabel(recovery) {
+export function recoveryLabel(recovery) {
   return recovery.source === "POLAR"
     ? `Nightly Recharge: ${RECHARGE_LABELS[recovery.recharge_status]}`
     : `${RECOVERY_ESTIMATE[recovery.status]} (schatting)`;

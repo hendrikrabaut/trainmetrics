@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrainMetrics scherm</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="wall">
+  <!-- A small screen next to the Pi: what matters today, refreshed on its own. -->
+  <header class="wall-header">
+    <b id="wall-time"></b>
+    <span id="wall-date"></span>
+  </header>
+  <main id="wall"></main>
+  <footer class="wall-footer muted" id="wall-status"></footer>
+  <span id="level-chip" hidden></span>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script type="module" src="js/wall.js"></script>
+</body>
+</html>

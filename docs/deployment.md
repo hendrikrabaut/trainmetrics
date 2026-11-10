@@ -214,6 +214,36 @@ Het agenda-abonnement staat onder **Plan › Schema**. Zet in de Tailscale-app V
 Demand aan, en kies op een Mac als locatie *Op mijn Mac*, niet iCloud: de servers
 van Apple kunnen je Pi niet bereiken.
 
+## 9. Een klein scherm aan de Pi
+
+`scherm.html` toont op 480 × 800 je volgende training, deze week, je slaap, je
+level en je laatste training, en ververst elke vijf minuten. Voor een Waveshare
+4inch HDMI LCD (resistief aanraakscherm) komt onderaan `/boot/firmware/config.txt`:
+
+```ini
+dtparam=spi=on
+dtoverlay=ads7846,cs=1,penirq=25,penirq_pull=2,speed=50000,keep_vref_on=0,swapxy=0,pmax=255,xohms=150,xmin=150,xmax=3900,ymin=100,ymax=3950
+```
+
+Het scherm meldt zich niet zelf aan, dus achteraan de ene regel in
+`/boot/firmware/cmdline.txt` komt:
+
+```text
+video=HDMI-A-1:480x800M@60D
+```
+
+Installeer Chromium en laat het bureaublad het scherm openen:
+
+```bash
+sudo apt install --no-install-recommends chromium
+mkdir -p ~/.config/labwc
+echo '/home/pi/trainmetrics/deploy/screen.sh &' > ~/.config/labwc/autostart
+sudo reboot
+```
+
+Dit eigen autostart-bestand vervangt dat van het bureaublad, dus de taakbalk
+start niet meer. Dat spaart geheugen.
+
 ## Updaten
 
 ```bash

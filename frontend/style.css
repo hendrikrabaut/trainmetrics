@@ -1185,3 +1185,72 @@ dialog.level-up .coach-art { display: none; }
   .proposal-title, .proposal-description { grid-column: 1 / -1; }
   .proposal-actions { grid-column: 1 / -1; justify-content: space-between; }
 }
+
+/* ---------- wall screen (scherm.html, 480 × 800) ---------- */
+
+.wall {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  padding: 14px 14px 8px;
+  gap: 12px;
+  cursor: none;
+}
+
+.wall-header { display: flex; align-items: baseline; gap: 12px; }
+
+.wall-header b { font-size: 2.6rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+
+.wall-header span { font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); }
+
+.wall main { display: grid; gap: 12px; align-content: start; flex: 1; min-height: 0; max-width: none; margin: 0; padding: 0; }
+
+.wall #level-chip { display: none !important; }
+
+.wall-last h2 { margin-bottom: 8px; }
+
+.wall .card, .wall .level-card { margin: 0; padding: 14px; }
+
+.wall-next { padding: 16px; color: var(--on-dark); background: var(--deep); border-radius: var(--radius); }
+
+.wall-next .eyebrow { font-size: 0.85rem; font-weight: 700; color: var(--peach); }
+
+.wall-next h2 { margin: 2px 0 4px; font-size: 1.7rem; font-weight: 800; line-height: 1.15; }
+
+.wall-next .facts { margin: 0 0 4px; font-size: 1.05rem; font-weight: 600; }
+
+.wall-next .description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--on-dark-muted);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.wall-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.wall-pair { display: flex; align-items: center; gap: 12px; }
+
+.wall-pair h2 { font-size: 1.05rem; }
+
+.wall-count { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+
+.wall-week, .wall-sleep { display: grid; gap: 12px; align-content: start; }
+
+.wall-days { display: flex; justify-content: space-between; }
+
+.wall-day { display: grid; justify-items: center; gap: 4px; font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); }
+
+.wall-day.today { color: var(--wine); }
+
+.wall-day i { width: 12px; height: 12px; border: 2px solid var(--line); border-radius: 50%; }
+
+.wall-day i.done { background: var(--wine); border-color: var(--wine); }
+
+.wall-day i.planned { border-color: var(--steel); }
+
+.wall .recovery-pill { justify-self: start; margin: 0; }
+
+.wall-footer { text-align: right; font-size: 0.8rem; }
