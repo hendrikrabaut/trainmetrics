@@ -232,17 +232,21 @@ Het scherm meldt zich niet zelf aan, dus achteraan de ene regel in
 video=HDMI-A-1:480x800M@60D
 ```
 
-Installeer Chromium en laat het bureaublad het scherm openen:
+Installeer Chromium, zet de vertaalvraag uit en laat het bureaublad het scherm
+openen:
 
 ```bash
 sudo apt install --no-install-recommends chromium
+sudo install -D -m 644 ~/trainmetrics/deploy/chromium/trainmetrics-screen.json /etc/chromium/policies/managed/trainmetrics-screen.json
 mkdir -p ~/.config/labwc
 echo '/home/pi/trainmetrics/deploy/screen.sh &' > ~/.config/labwc/autostart
 sudo reboot
 ```
 
-Dit eigen autostart-bestand vervangt dat van het bureaublad, dus de taakbalk
-start niet meer. Dat spaart geheugen.
+`deploy/screen.sh` wacht tot de app draait, zet het scherm op 480 × 800 en opent
+Chromium zonder grafische versnelling: daarmee toont Chromium op een Pi 3 alleen
+een wit venster. Klopt de aanraking niet met wat je ziet, kalibreer dan met
+`evtest` zoals in de handleiding van Waveshare.
 
 ## Updaten
 
