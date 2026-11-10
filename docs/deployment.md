@@ -217,19 +217,25 @@ van Apple kunnen je Pi niet bereiken.
 ## 9. Een klein scherm aan de Pi
 
 `scherm.html` toont op 480 × 800 je volgende training, deze week, je slaap, je
-level en je laatste training, en ververst elke vijf minuten. Voor een Waveshare
-4inch HDMI LCD (resistief aanraakscherm) komt onderaan `/boot/firmware/config.txt`:
+level en je laatste training, en ververst elke vijf minuten. Dit is getest met een
+Waveshare 4inch HDMI LCD met resistief aanraakscherm, op een Pi 3.
+
+Het scherm geeft zelf niet door welk beeld het aankan, en toont alleen iets met
+precies de timing uit de handleiding van Waveshare. De nieuwe beelddriver (KMS)
+gebruikt die timing niet, dus de Pi gebruikt de firmwaredriver (FKMS). Vervang in
+`/boot/firmware/config.txt` de regel `dtoverlay=vc4-kms-v3d` door
+`dtoverlay=vc4-fkms-v3d`, en zet onderaan:
 
 ```ini
+[all]
 dtparam=spi=on
 dtoverlay=ads7846,cs=1,penirq=25,penirq_pull=2,speed=50000,keep_vref_on=0,swapxy=0,pmax=255,xohms=150,xmin=150,xmax=3900,ymin=100,ymax=3950
-```
-
-Het scherm meldt zich niet zelf aan, dus achteraan de ene regel in
-`/boot/firmware/cmdline.txt` komt:
-
-```text
-video=HDMI-A-1:480x800M@60D
+hdmi_group=2
+hdmi_mode=87
+hdmi_timings=480 0 40 10 80 800 0 13 3 32 0 0 0 60 0 32000000 3
+hdmi_drive=1
+hdmi_force_hotplug=1
+disable_fw_kms_setup=0
 ```
 
 Installeer Chromium, zet de vertaalvraag uit en laat het bureaublad het scherm
@@ -238,15 +244,19 @@ openen:
 ```bash
 sudo apt install --no-install-recommends chromium
 sudo install -D -m 644 ~/trainmetrics/deploy/chromium/trainmetrics-screen.json /etc/chromium/policies/managed/trainmetrics-screen.json
-mkdir -p ~/.config/labwc
-echo '/home/pi/trainmetrics/deploy/screen.sh &' > ~/.config/labwc/autostart
+mkdir -p ~/.config/labwc ~/.config/kanshi
+cp ~/trainmetrics/deploy/screen/kanshi.conf ~/.config/kanshi/config
+echo '/home/pi/trainmetrics/deploy/screen.sh > /tmp/screen.log 2>&1 &' > ~/.config/labwc/autostart
 sudo reboot
 ```
 
-`deploy/screen.sh` wacht tot de app draait, zet het scherm op 480 × 800 en opent
-Chromium zonder grafische versnelling: daarmee toont Chromium op een Pi 3 alleen
-een wit venster. Klopt de aanraking niet met wat je ziet, kalibreer dan met
-`evtest` zoals in de handleiding van Waveshare.
+`deploy/screen.sh` wacht tot de app draait, laat het bureaublad nog even tot rust
+komen en opent Chromium zonder grafische versnelling: anders, of te vroeg gestart,
+toont Chromium op een Pi 3 alleen een wit venster. Klopt de aanraking niet met wat
+je ziet, kalibreer dan met `evtest` zoals in de handleiding van Waveshare.
+
+Het scherm haalt zijn stroom uit de Pi. Gebruik de officiële voeding: met een
+zwakkere krijgt de Pi te weinig spanning en kan hij vanzelf herstarten.
 
 ## Updaten
 
